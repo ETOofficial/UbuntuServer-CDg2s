@@ -36,21 +36,21 @@ show_prop() {
 
 # 填充一整行输出
 pad() {
-    # TODO 多行内容或超过终端长度的内容无法处理
+    # FIXME 多行内容或超过终端长度的内容无法处理
     local line_length=$(printf '%s' "$1" | sed $'s/\033\[[0-9;]*m//g' | wc -c) # 计算行长度
     local terminal_width=$(tput cols)                                          # 计算终端宽度
 
     # 计算需要填充的空格数量
     # FIXME 末尾实际仍然有未填充距离，8 是调试时缺失的字符数
-    local padding_length=$(((terminal_width - line_length) % terminal_width + 8))
+    local padding_length=$(echo "($terminal_width - $line_length) % $terminal_width + 8" | bc)
 
-    padding=$(printf '%*s' $padding_length '') # 生成填充空格
+    local padding=$(printf '%*s' $padding_length '') # 生成填充空格
     echo -e "$1$padding"
 }
 
 dividing_line() {
-    terminal_width=$(tput cols)                             # 计算终端宽度
-    padding=$(printf '%*s' $terminal_width '' | tr ' ' '-') # 填充
+    local terminal_width=$(tput cols)                             # 计算终端宽度
+    local padding=$(printf '%*s' $terminal_width '' | tr ' ' '-') # 填充
     echo "$padding"
 }
 
@@ -69,6 +69,14 @@ contains_element() {
     echo "" # 未找到匹配
 }
 
+reverse_bool() {
+    if [ "$1" = "true" ]; then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
+
 # 处理类 ####################################################################################################
 
 cho_move() {
@@ -82,12 +90,14 @@ cho_move() {
         #           confirm_clr
         # FIXME 已知问题：实际上无法读取回车，按回车读取的结果是空格
         if [ "$key" = $'\x1b' ]; then # Esc ，用于检测方向键
-            confirm_clr
+            # 这里不能 confirm_clr ，否则会无法确认，原因未知。
+            # confirm_clr
             # 读取后续两个字符
             read -rsn2 -t 0.1 rest
             case "$rest" in
             # Up
             '[A')
+                confirm_clr
                 ((cho--))
                 if ((cho == -1)); then
                     cho=$((${#funcs[@]} - 1))
@@ -95,6 +105,7 @@ cho_move() {
                 ;;
             # Down
             '[B')
+                confirm_clr
                 ((cho++))
                 if ((cho == ${#funcs[@]})); then
                     cho=0
@@ -102,6 +113,7 @@ cho_move() {
                 ;;
             # Right
             '[C')
+                confirm_clr
                 if [ "$page" = "main" ]; then
                     if ((cho == 1)); then
                         ((sort_setting++))
@@ -121,6 +133,7 @@ cho_move() {
                 ;;
             # Left
             '[D')
+                confirm_clr
                 if [ "$page" = "main" ]; then
                     if ((cho == 1)); then
                         ((sort_setting--))
@@ -142,289 +155,319 @@ cho_move() {
             break
         else
             case "$page" in
-                "main")
-                    # 主页面
-                    if ((cho == 0)); then # 快速搜索
+            "main")
+                # 主页面
+                if ((cho == 0)); then # 快速搜索
+                    confirm_clr
+                    case "$key" in
+                    $'\x00')
+                        ((cho++))
+                        ;;
+                    $'\x7f')
+                        fast_search_name="${fast_search_name%?}"
+                        refresh=true
+                        ;;
+                    *)
+                        fast_search_name+="$key"
+                        refresh=true
+                        ;;
+                    esac
+                    break
+                else
+                    case "$key" in
+                    $'\x00')
+                        # 回车
                         confirm_clr
-                        case "$key" in
-                        $'\x00')
-                            ((cho++))
-                            ;;
-                        $'\x7f')
-                            fast_search_name="${fast_search_name%?}"
+                        # TODO 添加换页功能以应对过多的文件
+                        # 注意：不可删除空处理，因为默认是选择的文件或目录
+                        case $cho in
+
+                        # 搜索（已在别处处理）
+                        0) ;;
+                        # 排序方式
+                        1)
+                            if $sort_r; then
+                                sort_r=false
+                            else
+                                sort_r=true
+                            fi
                             refresh=true
                             ;;
+
+                        # 上级目录所在行数，如果行数有变，需要更改此处
+                        2)
+                            cd ..
+                            cho=0
+                            refresh=true
+                            log_clr
+                            ;;
+
                         *)
-                            fast_search_name+="$key"
-                            refresh=true
+                            log_clr
+                            local file_name="${files[(($cho - 3))]}"
+                            local file_type="$(file -b "$file_name")"
+                            if [ "$file_type" = "directory" ]; then
+                                cd "$file_name" 2>/tmp/ubuntu-cd || {
+                                    local error_message=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$file_name" "$error_message")"
+                                }
+                                cho=0
+                                refresh=true
+                            else
+                                log_err "unsupported file type: $file_name | $file_type"
+                            fi
                             ;;
                         esac
                         break
-                    else
-                        case "$key" in
-                            $'\x00')
-                                # 回车
-                                confirm_clr
-                                # TODO 添加换页功能以应对过多的文件
-                                # 注意：不可删除空处理，因为默认是选择的文件或目录
-                                case $cho in
-
-                                # 搜索（已在别处处理）
-                                0) ;;
-                                # 排序方式
-                                1)
-                                    if [ "$sort_r" = true ]; then
-                                        sort_r=false
-                                    else
-                                        sort_r=true
-                                    fi
-                                    refresh=true
-                                    ;;
-
-                                # 上级目录所在行数，如果行数有变，需要更改此处
-                                2)
-                                    cd ..
-                                    cho=0
-                                    refresh=true
-                                    log_clr
-                                    ;;
-
-                                *)
-                                    log_clr
-                                    local file_name="${files[(($cho - 3))]}"
-                                    local file_type="$(file -b "$file_name")"
-                                    if [ "$file_type" = "directory" ]; then
-                                        cd "$file_name" 2>/tmp/ubuntu-cd || {
-                                            local error_message=$(cat /tmp/ubuntu-cd)
-                                            log_err "$(handle_error "$file_name" "$error_message")"
-                                        }
-                                        cho=0
-                                        refresh=true
-                                    else
-                                        log_err "unsupported file type: $file_name | $file_type"
-                                    fi
-                                    ;;
-                                esac
-                                break
-                                ;;
-                            "f")
-                                # 刷新
-                                confirm_clr
-                                if [ "$(refresh_cooling)" -eq 1 ]; then # 限制刷新频率
-                                    break
-                                fi
-                                refresh=true
-                                log "Refreshed"
-                                break
-                                ;;
-                            "q")
-                                # 退出
-                                confirm_clr
-                                isexit=true
-                                break
-                                ;;
-                            "n")
-                                # 新建
-                                confirm_clr
-                                new_menu
-                                break
-                                ;;
-                            "~")
-                                # 删除（delete）
-                                if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
-                                    continue
-                                fi
-                                
-                                if ((cho != confirm_cho)); then # confirm_clr
-                                    confirm=""
-                                fi
-
-                                local file_name="${files[(($cho - 3))]}"
-                                if [ "$confirm" = "delete" ]; then
-                                    rm -rf "${file_name}" 2>/tmp/ubuntu-cd || {
-                                        local error_message=$(cat /tmp/ubuntu-cd)
-                                        log_err "$(handle_error "$file_name" "$error_message")"
-                                    }
-                                    confirm=""
-                                    log "$yellow$file_name$normal deleted"
-                                else
-                                    confirm="delete"
-                                    confirm_cho="$cho"
-                                    log_warn "You are trying to ${red}delete$normal $yellow\"$file_name\"$normal, if you are sure, please type again."
-                                fi
-                                refresh=true
-                                break
-                                ;;
-                            "c")
-                                # 复制
-                                if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
-                                    continue
-                                fi
-
-                                confirm_clr
-                                local file_name="${files[(($cho - 3))]}"
-                                if [ "$(show_prop type $file_name)" = "directory" ]; then
-                                    copy_name="$(pwd)/$file_name/"
-                                else
-                                    copy_name="$(pwd)/$file_name"
-                                fi
-                                log "$yellow$file_name$normal copyed"
-                                move_name=""
-                                break
-                                ;;
-                            "p")
-                                # 粘贴
-                                if ((cho != confirm_cho)); then # confirm_clr
-                                    confirm=""
-                                fi
-
-                                if [ "$copy_name" = "" ]; then
-                                    if [ "$move_name" = "" ]; then
-                                        log_err "nothing to paste"
-                                        break
-                                    else
-                                        if [ "$move_name" != "$(pwd)/" ] || [ "$confirm" = "p" ]; then
-                                            confirm=""
-                                            log "$yellow$move_name$normal moved"
-                                            mv "$move_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
-                                                local error_message=$(cat /tmp/ubuntu-cd)
-                                                log_err "$(handle_error "" "$error_message")"
-                                            }
-                                            move_name=""
-                                        else
-                                            confirm="p"
-                                            log_warn "The file already exists, you are trying to ${red}overwrite$normal $yellow\"$move_name\"$normal, if you are sure, please type again."
-                                        fi
-                                        break
-                                    fi
-                                elif [ "${copy_name: -1}" = "/" ]; then
-                                    log "$yellow$copy_name$normal copyed"
-                                    cp -r "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
-                                        local error_message=$(cat /tmp/ubuntu-cd)
-                                        log_err "$(handle_error "" "$error_message")"
-                                    }
-                                    copy_name=""
-                                else
-                                    log "$yellow$copy_name$normal copyed"
-                                    cp "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
-                                        local error_message=$(cat /tmp/ubuntu-cd)
-                                        log_err "$(handle_error "" "$error_message")"
-                                    }
-                                    copy_name=""
-                                fi
-                                refresh=true
-                                break
-                                ;;
-                            "P")
-                                # 粘贴（高级选项）
-                                confirm_clr
-                                if [ "$copy_name" = "" ] && [ "$move_name" = "" ]; then
-                                    log_err "nothing to paste"
-                                    break
-                                elif [ "$copy_name" = "" ]; then
-                                    paste_menu "$move_name" "$(pwd)/"
-                                else
-                                    paste_menu "$copy_name" "$(pwd)/"
-                                fi
-                                refresh=true
-                                break
-                                ;;
-                            "m")
-                                # 移动（剪切）
-                                if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
-                                    continue
-                                fi
-
-                                confirm_clr
-                                local file_name="${files[(($cho - 3))]}"
-                                move_name="$(pwd)/$file_name"
-                                log "$yellow$file_name$normal cuted"
-                                copy_name=""
-                                break
-                                ;;
-                            *)
-                                if [ "$debug" = true ]; then
-                                    confirm_clr
-                                    show_what_has_been_pressed
-                                    break
-                                fi
-                                ;;
-                        esac
-
-                    fi
-                    ;;
-                "new")
-                    # 新建页面
-                    if ((cho == 1)); then # 名称输入行
+                        ;;
+                    "f")
+                        # 刷新
                         confirm_clr
-                        if [ "$key" = $'\x7f' ]; then
-                            new_name="${new_name%?}"
-                            log_clr
-                        elif [ "$key" = "\\" ]; then
-                            log_err "unsupported charactor \"\\\""
-                        elif (($(printf '%s' "$new_name" | wc -c) >= 255)); then
-                            log_err "name too long"
-                        else
-                            new_name+="$key"
-                            log_clr
+                        if $(refresh_cooling); then # 限制刷新频率
+                            break
                         fi
-                        local unrecommend_chars=("<" ">" "?" "*" "|" "\"" "'" " ")
-                        local unrecommend_char="$(contains_element "$new_name" "${unrecommend_chars[@]}")"
-                        if [ "$unrecommend_char" != "" ]; then
-                            log_warn "unrecommend charactor \"$unrecommend_char\"\nThis character is not recommended because they have special meanings in the shell and may cause command execution errors."
-                        fi
+                        refresh=true
+                        log "Refreshed"
                         break
+                        ;;
+                    "q")
+                        # 退出
+                        confirm_clr
+                        isexit=true
+                        break
+                        ;;
+                    "n")
+                        # 新建
+                        confirm_clr
+                        new_menu
+                        break
+                        ;;
+                    "~")
+                        # 删除（delete）
+                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                            continue
+                        fi
 
-                    else
-                        case "$key" in
-                            $'\x00')
-                                # 回车
-                                confirm_clr
-                                if ((cho == ${#funcs[@]} - 1)); then # 取消
-                                    isexit=true
-                                    break
-                                elif ((cho == ${#funcs[@]} - 2)); then # 确认
-                                    if [ "$new_name" = "" ]; then
-                                        log_err "name cannot be empty"
-                                    elif [ "${new_type_options[$new_type_setting]}" = "file" ]; then
-                                        log "$yellow$new_name$normal created"
-                                        isexit=true
-                                        touch "$new_name" 2>"/tmp/ubuntu-cd" || {
-                                            local error_message=$(cat /tmp/ubuntu-cd)
-                                            log_err "$(handle_error "$new_name" "$error_message")"
-                                            isexit=false
-                                        }
-                                    elif [ "${new_type_options[$new_type_setting]}" = "dirctory" ]; then
-                                        log "$yellow$new_name$normal created"
-                                        isexit=true
-                                        mkdir "$new_name" 2>"/tmp/ubuntu-cd" || {
-                                            local error_message=$(cat /tmp/ubuntu-cd)
-                                            log_err "$(handle_error "$new_name" "$error_message")"
-                                            isexit=false
-                                        }
-                                    fi
-                                    break
-                                elif ((cho == 1)); then # 输入确认
-                                    ((cho++))
-                                    break
-                                fi
-                                ;;
-                            *)
-                                confirm_clr
-                                show_what_has_been_pressed
+                        # if ((cho != confirm_cho)); then # confirm_clr
+                        #     confirm=""
+                        # fi
+
+                        local file_name="${files[(($cho - 3))]}"
+                        if [ "$confirm" = "delete" ]; then
+                            log "$yellow$file_name$normal deleted"
+                            rm -rf "${file_name}" 2>/tmp/ubuntu-cd || {
+                                local error_message=$(cat /tmp/ubuntu-cd)
+                                log_err "$(handle_error "$file_name" "$error_message")"
+                            }
+                            confirm=""
+                        else
+                            confirm_cho="$cho"
+                            log_warn "You are trying to ${red}delete$normal $yellow\"$file_name\"$normal, if you are sure, please type again."
+                            # if [ "$debug" = true ]; then
+                            #     log_debug "confirm=$confirm"
+                            # fi
+                            confirm="delete"
+                        fi
+                        refresh=true
+                        break
+                        ;;
+                    "c")
+                        # 复制
+                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                            continue
+                        fi
+
+                        confirm_clr
+                        local file_name="${files[(($cho - 3))]}"
+                        if [ "$(show_prop type $file_name)" = "directory" ]; then
+                            copy_name="$(pwd)/$file_name/"
+                        else
+                            copy_name="$(pwd)/$file_name"
+                        fi
+                        log "$yellow$file_name$normal copyed"
+                        move_name=""
+                        break
+                        ;;
+                    "p")
+                        # 粘贴
+                        # if ((cho != confirm_cho)); then # confirm_clr
+                        #     confirm=""
+                        # fi
+
+                        reload=true
+
+                        if [ "$copy_name" = "" ]; then
+                            if [ "$move_name" = "" ]; then
+                                log_err "nothing to paste"
                                 break
-                                ;;
-                        esac
+                            else
+                                if [ "$move_name" != "$(pwd)/" ] || [ "$confirm" = "p" ]; then
+                                    confirm=""
+                                    log "$yellow$move_name$normal moved"
+                                    mv "$move_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
+                                        local error_message=$(cat /tmp/ubuntu-cd)
+                                        log_err "$(handle_error "" "$error_message")"
+                                    }
+                                    move_name=""
+                                    refresh=true
+                                else
+                                    confirm="p"
+                                    log_warn "The file already exists, you are trying to ${red}overwrite$normal $yellow\"$move_name\"$normal, if you are sure, please type again."
+                                fi
+                            fi
+                        elif [ "${copy_name: -1}" = "/" ]; then
+                            log "$yellow$copy_name$normal pasted"
+                            cp -r "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
+                                local error_message=$(cat /tmp/ubuntu-cd)
+                                log_err "$(handle_error "" "$error_message")"
+                            }
+                            # copy_name=""
+                        else
+                            log "$yellow$copy_name$normal pasted"
+                            cp "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
+                                local error_message=$(cat /tmp/ubuntu-cd)
+                                log_err "$(handle_error "" "$error_message")"
+                            }
+                            # copy_name=""
+                        fi
+                        refresh=true
+                        break
+                        ;;
+                    "P")
+                        # 粘贴（高级选项）
+                        confirm_clr
+                        if [ "$copy_name" = "" ] && [ "$move_name" = "" ]; then
+                            log_err "nothing to paste"
+                            break
+                        elif [ "$copy_name" = "" ]; then
+                            paste_menu "$move_name" "$(pwd)/"
+                        else
+                            paste_menu "$copy_name" "$(pwd)/"
+                        fi
+                        refresh=true
+                        break
+                        ;;
+                    "m")
+                        # 移动（剪切）
+                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                            continue
+                        fi
+
+                        confirm_clr
+                        local file_name="${files[(($cho - 3))]}"
+                        move_name="$(pwd)/$file_name"
+                        log "$yellow$file_name$normal cuted"
+                        copy_name=""
+                        break
+                        ;;
+                    *)
+                        if $debug; then
+                            confirm_clr
+                            show_what_has_been_pressed
+                            break
+                        fi
+                        ;;
+                    esac
+
+                fi
+                ;;
+            "new")
+                # 新建页面
+                if ((cho == 1)); then # 名称输入行
+                    confirm_clr
+                    if [ "$key" = $'\x7f' ]; then
+                        new_name="${new_name%?}"
+                        log_clr
+                    elif [ "$key" = "\\" ]; then
+                        log_err "unsupported charactor \"\\\""
+                    elif (($(printf '%s' "$new_name" | wc -c) >= 255)); then
+                        log_err "name too long"
+                    else
+                        new_name+="$key"
+                        log_clr
                     fi
-                    ;;
+                    local unrecommend_chars=("<" ">" "?" "*" "|" "\"" "'" " ")
+                    local unrecommend_char="$(contains_element "$new_name" "${unrecommend_chars[@]}")"
+                    if [ "$unrecommend_char" != "" ]; then
+                        log_warn "unrecommend charactor \"$unrecommend_char\"\nThis character is not recommended because they have special meanings in the shell and may cause command execution errors."
+                    fi
+                    break
+
+                else
+                    case "$key" in
+                    $'\x00')
+                        # 回车
+                        confirm_clr
+                        if ((cho == ${#funcs[@]} - 1)); then # 取消
+                            isexit=true
+                            break
+                        elif ((cho == ${#funcs[@]} - 2)); then # 确认
+                            if [ "$new_name" = "" ]; then
+                                log_err "name cannot be empty"
+                            elif [ "${new_type_options[$new_type_setting]}" = "file" ]; then
+                                log "$yellow$new_name$normal created"
+                                isexit=true
+                                touch "$new_name" 2>"/tmp/ubuntu-cd" || {
+                                    local error_message=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$new_name" "$error_message")"
+                                    isexit=false
+                                }
+                            elif [ "${new_type_options[$new_type_setting]}" = "dirctory" ]; then
+                                log "$yellow$new_name$normal created"
+                                isexit=true
+                                mkdir "$new_name" 2>"/tmp/ubuntu-cd" || {
+                                    local error_message=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$new_name" "$error_message")"
+                                    isexit=false
+                                }
+                            fi
+                            break
+                        elif ((cho == 1)); then # 输入确认
+                            ((cho++))
+                            break
+                        fi
+                        ;;
+                    *)
+                        confirm_clr
+                        show_what_has_been_pressed
+                        break
+                        ;;
+                    esac
+                fi
+                ;;
+            "paste")
+                if [ "$copy_name" = "" ]; then
+                    case "$key" in
+                    $'\x00')
+                        case "$cho" in
+                        0)
+                            mv_b="$(reverse_bool "$mv_b")"
+                            ;;
+                        1)
+                            mv_i="$(reverse_bool "$mv_i")"
+                            ;;
+                        esac
+                        break
+                        ;;
+                    esac
+                else
+                    :
+                fi
+                ;;
             esac
         fi
     done
 }
 
+# 返回值：如果刷新时间已过设定时长，则返回 false，否则返回 true
 refresh_cooling() {
     local time=$(date +%s.%N)
     bc <<<"$time - $refresh_time > 0.1"
+    if ((bc == 1)); then
+        echo false
+    else
+        echo true
+    fi
 }
 
 # 菜单类 ####################################################################################################
@@ -440,7 +483,15 @@ __main_menu__() {
     # FIXME 快速搜索内容变化时仍然会卡顿，将搜索栏优先刷新
     # TODO 快速搜索功能实现
     local time=$(date +%s.%N)
-    if [ $refresh = true ] && [ "$(refresh_cooling)" -eq 1 ]; then
+    if $refresh; then
+        log_debug "refreshed"
+        # if $reload; then
+        #     log_debug "reloaded"
+        #     local dir=$(pwd)
+        #     cd ..
+        #     cd "$dir"
+        #     reload=false
+        # fi
         shopt -s nullglob # 设置nullglob选项，使没有匹配时返回空数组
         files=(*)         # 将当前目录下的所有文件和目录存入数组
         shopt -u nullglob # 取消nullglob选项，避免影响后续命令
@@ -585,16 +636,16 @@ __paste_menu__() {
     # 处理要显示的内容
     if [ "$mode" = "cut" ]; then
         funcs=(
-            "[ $(show_bool "$mv_b") ] When the target file or directory exists, create a backup of it before performing the overwrite." 
+            "[ $(show_bool "$mv_b") ] When the target file or directory exists, create a backup of it before performing the overwrite."
             "[ $(show_bool "$mv_i") ] If the source directory or file specified to be moved has the same name as the target's directory or file, first ask whether to overwrite the old file."
             "[ $(show_bool "$mv_f") ] If the source directory or file specified to be moved has the same name as the target's directory or file, the old file is overwritten directly."
             "[ $(show_bool "$mv_n") ] Does not overwrite any pre-existing files or directories."
             "[ $(show_bool "$mv_u") ] When the source file is newer than the target file or the target file does not exist, then perform the move operation."
-            "Confirm" 
+            "Confirm"
             "Cancel"
         )
     elif [ "$mode" = "copy" ]; then
-    :
+        :
     fi
 
     # 显示页面
@@ -619,7 +670,7 @@ __paste_menu__() {
 
 # 之后的 menu 函数用于直接调用
 main_menu() {
-    log_clr
+    # log_clr
     while [ "$isexit" = false ]; do
         clear
         __main_menu__
@@ -693,7 +744,7 @@ show_new_type() {
 }
 
 show_bool() {
-    if [ "$1" = true ]; then
+    if $1; then
         echo -ne "${blue}True$normal"
     else
         echo -ne "${red}False$normal"
@@ -721,30 +772,53 @@ handle_error() {
 
 # 日志类 ####################################################################################################
 
+# TODO 将日志写入文件以支持显示更多内容
 log() {
-    log_info="\n$(dividing_line)\n[$(date)] $1"
+    if $debug;then
+        log_info+="\n[$(date)] $1"
+    else
+        log_info="\n$(dividing_line)\n[$(date)] $1"
+    fi
 }
 log_warn() {
-    log_info="\n$(dividing_line)\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
+    if $debug;then
+        log_info+="\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
+    else
+        log_info="\n$(dividing_line)\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
+    fi
 }
 log_err() {
-    log_info="\n$(dividing_line)\n[$(date)] ${RED}[ERROR]$NORMAL $1"
+    if $debug;then
+        log_info+="\n[$(date)] ${RED}[ERROR]$NORMAL $1"
+    else
+        log_info="\n$(dividing_line)\n[$(date)] ${RED}[ERROR]$NORMAL $1"
+    fi
 }
 log_debug() {
-    log_info="\n$(dividing_line)\n[$(date)] ${BLUE}[DEBUG]$NORMAL $1"
+    if [ "$log_info" = "" ]; then
+        log_clr
+    fi
+    log_info+="\n[$(date)] ${BLUE}[DEBUG]$NORMAL $1"
 }
 log_clr() {
-    log_info="\n$(dividing_line)\n"
+    if $debug;then
+        log_info+=""
+    else
+        log_info="\n$(dividing_line)\n"
+    fi
 }
 
 confirm_clr() {
-    local confirms=("delete" "p")
+    # local confirms=("delete" "p")
     if [ "$confirm" != "" ]; then
         log_clr
-    fi
-    if [ "$(contains_element $confirm ${confirms[@]})" != "" ]; then
         confirm=""
+        # log_debug "${BASH_LINENO[0]}: confirm set to ''"
+        
     fi
+    # if [ "$(contains_element "$confirm" "${confirms[@]}")" != "" ]; then
+    #     confirm=""
+    # fi
 }
 
 show_what_has_been_pressed() {
@@ -778,7 +852,8 @@ page="main"        # 当前页面
 sort_setting=0     # 排序选项
 sort_r=false       # 是否倒序排序
 new_type_setting=0 # 新建类型选项
-refresh_time=0 # 刷新时间
+refresh_time=0     # 刷新时间
+reload=false # 重新加载
 
 mv_b=false
 mv_u=false
@@ -798,7 +873,7 @@ for arg in "$@"; do
         ;;
     esac
 done
-if [ "$debug" = true ]; then
+if $debug; then
     log_debug "Debug mode is on"
 fi
 
