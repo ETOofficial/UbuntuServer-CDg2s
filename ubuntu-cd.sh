@@ -34,6 +34,18 @@ show_prop() {
     fi
 }
 
+bool2str() {
+    if $1; then
+        echo -en "$2"
+    else
+        echo -en "$3"
+    fi
+}
+
+pause() {
+    read -rn 1 -p "$1"
+}
+
 # 填充一整行输出
 pad() {
     # FIXME 多行内容或超过终端长度的内容无法处理
@@ -48,9 +60,18 @@ pad() {
     echo -e "$1$padding"
 }
 
+centering(){
+    local terminal_width=$(tput cols)
+    local line_length=$(printf '%s' "$1" | sed $'s/\033\[[0-9;]*m//g' | wc -c)
+    # 计算左侧空格数，使用 (cols - len + 1) 处理奇偶问题
+    left=$(echo "( ($terminal_width - $line_length + 1) / 2 )" | bc)
+    # 使用printf输出居中文本
+    printf "%*s%s\n" $left "" "$1"
+}
+
 dividing_line() {
     local terminal_width=$(tput cols)                             # 计算终端宽度
-    local padding=$(printf '%*s' $terminal_width '' | tr ' ' '-') # 填充
+    local padding=$(printf '%*s' $terminal_width '' | tr ' ' $1) # 填充
     echo "$padding"
 }
 
@@ -70,10 +91,10 @@ contains_element() {
 }
 
 reverse_bool() {
-    if [ "$1" = "true" ]; then
-        echo "false"
+    if $1; then
+        echo false
     else
-        echo "true"
+        echo true
     fi
 }
 
@@ -89,7 +110,7 @@ cho_move() {
         #       常驻处理项：
         #           confirm_clr
         # FIXME 已知问题：实际上无法读取回车，按回车读取的结果是空格
-        if [ "$key" = $'\x1b' ]; then # Esc ，用于检测方向键
+        if [ "$key" = $'\x1b' ]; then # 用于检测方向键
             # 这里不能 confirm_clr ，否则会无法确认，原因未知。
             # confirm_clr
             # 读取后续两个字符
@@ -290,6 +311,7 @@ cho_move() {
                         ;;
                     "p")
                         # 粘贴
+
                         # if ((cho != confirm_cho)); then # confirm_clr
                         #     confirm=""
                         # fi
@@ -312,7 +334,7 @@ cho_move() {
                                     refresh=true
                                 else
                                     confirm="p"
-                                    log_warn "The file already exists, you are trying to ${red}overwrite$normal $yellow\"$move_name\"$normal, if you are sure, please type again."
+                                    log_warn "The file already exists, you are trying to ${red}overwrite$normal $yellow\"$move_name\"$normal. If you are sure, please type again."
                                 fi
                             fi
                         elif [ "${copy_name: -1}" = "/" ]; then
@@ -446,6 +468,26 @@ cho_move() {
                         1)
                             mv_i="$(reverse_bool "$mv_i")"
                             ;;
+                        2)
+                            mv_f="$(reverse_bool "$mv_f")"
+                            ;;
+                        3)
+                            mv_n="$(reverse_bool "$mv_n")"
+                            ;;
+                        4)
+                            mv_u="$(reverse_bool "$mv_u")"
+                            ;;
+                        5)
+                            clear
+                            echo "Output:"
+                            mv "-$(bool2str "$mv_b" "b" "")$(bool2str "$mv_i" "i" "")$(bool2str "$mv_f" "f" "")$(bool2str "$mv_n" "n" "")$(bool2str "$mv_u" "u" "")" "$target_file" "$target_dir"
+                            echo ""
+                            dividing_line "-"
+                            pause "Press any key to continue..."
+                            ;;
+                        6)
+                            isexit=true
+                            ;;
                         esac
                         break
                         ;;
@@ -485,13 +527,6 @@ __main_menu__() {
     local time=$(date +%s.%N)
     if $refresh; then
         log_debug "refreshed"
-        # if $reload; then
-        #     log_debug "reloaded"
-        #     local dir=$(pwd)
-        #     cd ..
-        #     cd "$dir"
-        #     reload=false
-        # fi
         shopt -s nullglob # 设置nullglob选项，使没有匹配时返回空数组
         files=(*)         # 将当前目录下的所有文件和目录存入数组
         shopt -u nullglob # 取消nullglob选项，避免影响后续命令
@@ -574,7 +609,7 @@ __main_menu__() {
         # 显示表头
         if ((i == 1)); then
             echo -ne "$NORMAL"
-            dividing_line
+            dividing_line "-"
             printf "%-30s %-30s %-30s %+15s" "Name" "Modified Date" "Type" "Size"
             echo ""
         fi
@@ -590,7 +625,7 @@ __main_menu__() {
 __new_menu__() {
     # 显示页眉
     echo "New"
-    dividing_line
+    dividing_line "-"
     echo -e "Current directory: $yellow$(pwd)$normal"
 
     # 显示页面
@@ -605,7 +640,7 @@ __new_menu__() {
         fi
         if ((i == ${#funcs[@]} - 3)); then
             echo -en "$NORMAL"
-            dividing_line
+            dividing_line "-"
         fi
         ((i++))
     done
@@ -617,12 +652,9 @@ __new_menu__() {
 
 # 粘贴菜单
 __paste_menu__() {
-    local target_file=$1
-    local target_dir=$2
-
     # 显示页眉
-    echo "Paste"
-    dividing_line
+    centering "Paste"
+    dividing_line "-"
     echo -e "Target file: $yellow$target_file$normal"
     echo -e "Target directory: $yellow$target_dir$normal"
     if [ "$copy_name" = "" ]; then
@@ -636,11 +668,11 @@ __paste_menu__() {
     # 处理要显示的内容
     if [ "$mode" = "cut" ]; then
         funcs=(
-            "[ $(show_bool "$mv_b") ] When the target file or directory exists, create a backup of it before performing the overwrite."
-            "[ $(show_bool "$mv_i") ] If the source directory or file specified to be moved has the same name as the target's directory or file, first ask whether to overwrite the old file."
-            "[ $(show_bool "$mv_f") ] If the source directory or file specified to be moved has the same name as the target's directory or file, the old file is overwritten directly."
-            "[ $(show_bool "$mv_n") ] Does not overwrite any pre-existing files or directories."
-            "[ $(show_bool "$mv_u") ] When the source file is newer than the target file or the target file does not exist, then perform the move operation."
+            "[$(show_bool "$mv_b")] -b: When the target file or directory exists, create a backup of it before performing the overwrite."
+            "[$(show_bool "$mv_i")] -i: If the source directory or file specified to be moved has the same name as the target's directory or file, first ask whether to overwrite the old file."
+            "[$(show_bool "$mv_f")] -f: If the source directory or file specified to be moved has the same name as the target's directory or file, the old file is overwritten directly."
+            "[$(show_bool "$mv_n")] -n: Does not overwrite any pre-existing files or directories."
+            "[$(show_bool "$mv_u")] -u: When the source file is newer than the target file or the target file does not exist, then perform the move operation."
             "Confirm"
             "Cancel"
         )
@@ -658,7 +690,7 @@ __paste_menu__() {
         fi
         if ((i == ${#funcs[@]} - 3)); then
             echo -en "$NORMAL"
-            dividing_line
+            dividing_line "-"
         fi
         ((i++))
     done
@@ -699,6 +731,9 @@ new_menu() {
 
 # 参数：目标文件名 目标目录
 paste_menu() {
+    target_file=$1
+    target_dir=$2
+
     funcs=()
     confirm_clr
     page="paste"
@@ -707,7 +742,7 @@ paste_menu() {
 
     while [ "$isexit" = false ]; do
         clear
-        __paste_menu__ "$1" "$2"
+        __paste_menu__
         cho_move
     done
 
@@ -777,21 +812,21 @@ log() {
     if $debug;then
         log_info+="\n[$(date)] $1"
     else
-        log_info="\n$(dividing_line)\n[$(date)] $1"
+        log_info="\n$(dividing_line "-")\n[$(date)] $1"
     fi
 }
 log_warn() {
     if $debug;then
         log_info+="\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
     else
-        log_info="\n$(dividing_line)\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
+        log_info="\n$(dividing_line "-")\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
     fi
 }
 log_err() {
     if $debug;then
         log_info+="\n[$(date)] ${RED}[ERROR]$NORMAL $1"
     else
-        log_info="\n$(dividing_line)\n[$(date)] ${RED}[ERROR]$NORMAL $1"
+        log_info="\n$(dividing_line "-")\n[$(date)] ${RED}[ERROR]$NORMAL $1"
     fi
 }
 log_debug() {
@@ -801,10 +836,10 @@ log_debug() {
     log_info+="\n[$(date)] ${BLUE}[DEBUG]$NORMAL $1"
 }
 log_clr() {
-    if $debug;then
-        log_info+=""
+    if $debug && [ "$log_info" != "" ];then
+        log_info="\n$(dividing_line "-")\n"
     else
-        log_info="\n$(dividing_line)\n"
+        log_info="\n$(dividing_line "-")\n"
     fi
 }
 
@@ -853,7 +888,6 @@ sort_setting=0     # 排序选项
 sort_r=false       # 是否倒序排序
 new_type_setting=0 # 新建类型选项
 refresh_time=0     # 刷新时间
-reload=false # 重新加载
 
 mv_b=false
 mv_u=false
