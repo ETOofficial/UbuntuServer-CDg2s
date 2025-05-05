@@ -34,37 +34,38 @@ show_prop() {
     fi
 }
 
-bool2str() {
-    if $1; then
-        echo -en "$2"
-    else
-        echo -en "$3"
-    fi
-}
+# bool2str() {
+#     if [ "$1" = true ]; then
+#         echo -en "$2"
+#     else
+#         echo -en "$3"
+#     fi
+# }
 
 pause() {
     read -rn 1 -p "$1"
 }
 
 # 填充一整行输出
-# 注意：调用时参数如果是变量，两端不能加颜色代码，否则末尾会有一段距离未填充空格
+# 注意：调用时参数如果是变量，两端不能加颜色代码，否则末尾会有一段距离未填充空格。原因可能是通配符匹配不正确
 pad() {
     local line_length=$(printf '%s' "$1" | sed $'s/\033\[[0-9;]*m//g' | wc -c) # 计算行长度
     local terminal_width=$(tput cols)                                          # 计算终端宽度
 
     # 处理多行内容
+    # bc 取余运算符无法处理负数
     while ((line_length > terminal_width)); do
-        ((line_length-=terminal_width))
+        ((line_length -= terminal_width))
     done
 
     # 计算需要填充的空格数量
     local padding_length=$(echo "$terminal_width - $line_length" | bc)
 
-    local padding=$(printf '%*s' $padding_length '') # 生成填充空格
+    local padding=$(printf '%*s' "$padding_length" '') # 生成填充空格
     echo -e "$1$padding"
 }
 
-centering(){
+centering() {
     local terminal_width=$(tput cols)
     local line_length=$(printf '%s' "$1" | sed $'s/\033\[[0-9;]*m//g' | wc -c)
     # 计算左侧空格数，使用 (cols - len + 1) 处理奇偶问题
@@ -73,12 +74,12 @@ centering(){
     printf "%*s%s\n" "$left" "" "$1"
 }
 
-title(){
+title() {
     echo -e "$RED$black$(pad "$(centering "$1")")$NORMAL$normal"
 }
 
 dividing_line() {
-    local terminal_width=$(tput cols)                             # 计算终端宽度
+    local terminal_width=$(tput cols)                            # 计算终端宽度
     local padding=$(printf '%*s' $terminal_width '' | tr ' ' $1) # 填充
     echo "$padding"
 }
@@ -98,8 +99,8 @@ contains_element() {
     echo "" # 未找到匹配
 }
 
-reverse_bool() {
-    if $1; then
+not() {
+    if [ "$1" = true ]; then
         echo false
     else
         echo true
@@ -107,6 +108,29 @@ reverse_bool() {
 }
 
 # 处理类 ####################################################################################################
+
+handle_error() {
+    local file_name=$1
+    local error_message=$2
+    case "$error_message" in
+    *"Permission denied"*)
+        echo -e "Permission denied: $file_name\n${yellow}You do not have sufficient privileges, please confirm the current user privileges or switch to a user with sufficient privileges. You can also contact the administrator for help.$normal"
+        ;;
+    *"No such file or directory"*)
+        echo -e "No such file or directory: $file_name\n${yellow}The directory was not found, please check if it exists.$normal"
+        ;;
+    *"File exists"*)
+        echo -e "File exists: $file_name\n${yellow}The file already exists, please choose another name.$normal"
+        ;;
+    *"Directory not empty"*)
+        echo -e "Directory not empty: $file_name\n${yellow}Discover non-empty directories with duplicate names, please delete it first.$normal"
+        ;;
+    *)
+        echo -e "Error: $file_name ($error_message)"
+        ;;
+    esac
+}
+
 
 cho_move() {
     while true; do
@@ -215,7 +239,7 @@ cho_move() {
                         0) ;;
                         # 排序方式
                         1)
-                            if $sort_r; then
+                            if [ $sort_r = true ]; then
                                 sort_r=false
                             else
                                 sort_r=true
@@ -252,7 +276,7 @@ cho_move() {
                     "f")
                         # 刷新
                         confirm_clr
-                        if $(refresh_cooling); then # 限制刷新频率
+                        if [ "$(refresh_cooling)" = true ]; then # 限制刷新频率
                             break
                         fi
                         refresh=true
@@ -391,7 +415,7 @@ cho_move() {
                         break
                         ;;
                     *)
-                        if $debug; then
+                        if [ $debug = true ]; then
                             confirm_clr
                             show_what_has_been_pressed
                             break
@@ -467,47 +491,111 @@ cho_move() {
                 ;;
             "paste")
                 if [ "$copy_name" = "" ]; then
+                    local mode="cut"
+                else
+                    local mode="copy"
+                fi
+
+                if [ "$mode" = "cut" ]; then
                     case "$key" in
                     $'\x00')
                         case "$cho" in
                         0)
-                            mv_b="$(reverse_bool "$mv_b")"
+                            mv_b="$(not "$mv_b")"
                             ;;
                         1)
-                            mv_i="$(reverse_bool "$mv_i")"
+                            mv_i="$(not "$mv_i")"
+                            if [ "$mv_i" = true ]; then
+                                mv_f=false
+                                mv_n=false
+                            fi
                             ;;
                         2)
-                            mv_f="$(reverse_bool "$mv_f")"
+                            mv_f="$(not "$mv_f")"
+                            if [ "$mv_f" = true ]; then
+                                mv_i=false
+                                mv_n=false
+                            fi
                             ;;
                         3)
-                            mv_n="$(reverse_bool "$mv_n")"
+                            mv_n="$(not "$mv_n")"
+                            if [ "$mv_n" = true ]; then
+                                mv_i=false
+                                mv_f=false
+                            fi
                             ;;
                         4)
-                            mv_u="$(reverse_bool "$mv_u")"
+                            mv_u="$(not "$mv_u")"
                             ;;
-                        5)
-                            clear
-                            echo "Output:"
-                            mv "-$(bool2str "$mv_b" "b" "")$(bool2str "$mv_i" "i" "")$(bool2str "$mv_f" "f" "")$(bool2str "$mv_n" "n" "")$(bool2str "$mv_u" "u" "")" "$target_file" "$target_dir"
-                            echo ""
-                            dividing_line "-"
-                            pause "Press any key to continue..."
+                        5) 
+                            mv_v="$(not "$mv_v")"
                             ;;
                         6)
-                            isexit=true
+                            mv_T="$(not "$mv_T")"
+                            ;;
+                        *)
+                            # local args=("$mv_b" "$mv_i" "$mv_f" "$mv_n" "$mv_u" "$mv_v" "$mv_T")
+                            # local paras=("b" "i" "f" "n" "u" "v" "T")
+                            # local arg=$(merge_paras ${args[@]} ${paras[@]})
+                            local args=()
+                            [[ "$mv_b" == true ]] && args+=("-b")
+                            [[ "$mv_i" == true ]] && args+=("-i")
+                            [[ "$mv_f" == true ]] && args+=("-f")
+                            [[ "$mv_n" == true ]] && args+=("-n")
+                            [[ "$mv_u" == true ]] && args+=("-u")
+                            [[ "$mv_v" == true ]] && args+=("-v")
+                            [[ "$mv_T" == true ]] && args+=("-T")
+                            if ((cho == ${#funcs[@]} - 2)); then
+                                isexit=true
+                                clear
+                                echo "> mv ${args[*]} $target_file $target_dir"
+                                echo "Output:"
+                                mv "${args[@]}" "$target_file" "$target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
+                                if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                                    error_message=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$target_file" "$error_message")"
+                                    isexit=false
+                                fi
+                                echo ""
+                                dividing_line "-"
+                                pause "Press any key to continue..."
+                            else
+                                isexit=true
+                            fi
                             ;;
                         esac
                         break
                         ;;
                     esac
-                else
-                    :
+                elif [ "$mode" = "copy" ]; then
+                    : # TODO
                 fi
                 ;;
             esac
         fi
     done
 }
+
+# merge_paras(){
+#     local merge="-"
+#     local arg_num=$#
+#     local i=0
+#     for para in "$@"; do
+#         if [ "$para" = false ] || [ "$para" = true ]; then
+#             if [ "$para" = true ]; then
+#                 merge="$merge${para2[$i]}"
+#             fi
+#         else
+#             break
+#         fi
+#         ((i++))
+#     done
+#     if [ "$merge" = "-" ]; then
+#         echo ""
+#     else
+#         echo "$merge"
+#     fi
+# }
 
 # 返回值：如果刷新时间已过设定时长，则返回 false，否则返回 true
 refresh_cooling() {
@@ -535,7 +623,9 @@ __main_menu__() {
     # FIXME 快速搜索内容变化时仍然会卡顿，将搜索栏优先刷新
     # TODO 快速搜索功能实现
     local time=$(date +%s.%N)
-    if $refresh; then
+    if [ $refresh = true ]; then
+        echo "loading..."
+        echo -en "\033[1A" # 将光标向上移动n行
         log_debug "refreshed"
         shopt -s nullglob # 设置nullglob选项，使没有匹配时返回空数组
         files=(*)         # 将当前目录下的所有文件和目录存入数组
@@ -545,10 +635,10 @@ __main_menu__() {
         local sort_mode="${sort_options[$sort_setting]}"
         # TODO 倒序排列、其余排序方式
         if [ "$sort_mode" = "name" ]; then
-            if [ "$sort_r" = false ]; then
-                files=($(printf "%s\n" "${files[@]}" | sort))
-            else
+            if [ $sort_r = true ]; then
                 files=($(printf "%s\n" "${files[@]}" | sort -r))
+            else
+                files=($(printf "%s\n" "${files[@]}" | sort))
             fi
         elif [ "$sort_mode" = "size" ]; then
             local sorted_files=()
@@ -562,10 +652,10 @@ __main_menu__() {
                         printf "%s %s\n" "$size" "$file"
                     fi
                 done |
-                    if [ "$sort_r" = false ]; then
-                        sort -n
-                    else
+                    if [ $sort_r = true ]; then
                         sort -nr
+                    else
+                        sort -n
                     fi | cut -d ' ' -f2- # 按数值排序后提取文件名
             )
             files=("${sorted_files[@]}")
@@ -581,10 +671,10 @@ __main_menu__() {
                         printf "%s %s\n" "$mtime" "$file"
                     fi
                 done |
-                    if [ "$sort_r" = false ]; then
-                        sort -n
-                    else
+                    if [ $sort_r = true ]; then
                         sort -nr
+                    else
+                        sort -n
                     fi | cut -d ' ' -f2- # 按数值排序后提取文件名
             )
             files=("${sorted_files[@]}")
@@ -634,8 +724,7 @@ __main_menu__() {
 # 新建菜单
 __new_menu__() {
     # 显示页眉
-    centering "New"
-    dividing_line "="
+    title "New"
     echo -e "Current directory: $yellow$(pwd)$normal"
 
     # 显示页面
@@ -663,8 +752,7 @@ __new_menu__() {
 # 粘贴菜单
 __paste_menu__() {
     # 显示页眉
-    centering "Paste"
-    dividing_line "-"
+    title "Paste"
     echo -e "Target file: $yellow$target_file$normal"
     echo -e "Target directory: $yellow$target_dir$normal"
     if [ "$copy_name" = "" ]; then
@@ -678,11 +766,13 @@ __paste_menu__() {
     # 处理要显示的内容
     if [ "$mode" = "cut" ]; then
         funcs=(
-            "[$(show_bool "$mv_b")] -b: When the target file or directory exists, create a backup of it before performing the overwrite."
-            "[$(show_bool "$mv_i")] -i: If the source directory or file specified to be moved has the same name as the target's directory or file, first ask whether to overwrite the old file."
-            "[$(show_bool "$mv_f")] -f: If the source directory or file specified to be moved has the same name as the target's directory or file, the old file is overwritten directly."
-            "[$(show_bool "$mv_n")] -n: Does not overwrite any pre-existing files or directories."
-            "[$(show_bool "$mv_u")] -u: When the source file is newer than the target file or the target file does not exist, then perform the move operation."
+            "$(printf "%s %-15s %s" "$(show_bool "$mv_b")" "backup" "make a backup of each existing destination file")"
+            "$(printf "%s %-15s %s" "$(show_bool "$mv_i")" "interactive" "prompt before overwrite")"
+            "$(printf "%s %-15s %s" "$(show_bool "$mv_f")" "force" "do not prompt before overwriting")"
+            "$(printf "%s %-15s %s" "$(show_bool "$mv_n")" "no-clobber" "do not overwrite an existing file")"
+            "$(printf "%s %-15s %s" "$(show_bool "$mv_u")" "updated" "updated files")"
+            "$(printf "%s %-15s %s" "$(show_bool "$mv_v")" "verbose" "explain what is being done")"
+            "$(printf "%s %-15s %s" "$(show_bool "$mv_T")" "DEST as normal" "treat DEST as a normal file")"
             "Confirm"
             "Cancel"
         )
@@ -698,10 +788,10 @@ __paste_menu__() {
         else
             echo -e "$NORMAL$func"
         fi
-        if ((i == ${#funcs[@]} - 3)); then
-            echo -en "$NORMAL"
-            dividing_line "-"
-        fi
+        # if ((i == ${#funcs[@]} - 3)); then
+        #     echo -en "$NORMAL"
+        #     dividing_line "-"
+        # fi
         ((i++))
     done
 
@@ -789,64 +879,51 @@ show_new_type() {
 }
 
 show_bool() {
-    if $1; then
-        echo -ne "${blue}True$normal"
+    if [ "$1" = true ]; then
+        echo -ne "[x]"
     else
-        echo -ne "${red}False$normal"
+        echo -ne "[ ]"
     fi
 }
 
-handle_error() {
-    local file_name=$1
-    local error_message=$2
-    case "$error_message" in
-    *"Permission denied"*)
-        echo -e "Permission denied: $file_name\n${yellow}You do not have sufficient privileges, please confirm the current user privileges or switch to a user with sufficient privileges. You can also contact the administrator for help.$normal"
-        ;;
-    *"No such file or directory"*)
-        echo -e "No such file or directory: $file_name\n${yellow}The directory was not found, please check if it exists.$normal"
-        ;;
-    *"File exists"*)
-        echo -e "File exists: $file_name\n${yellow}The file already exists, please choose another name.$normal"
-        ;;
-    *)
-        echo -e "Unknown error: $file_name ($error_message)"
-        ;;
-    esac
-}
 
 # 日志类 ####################################################################################################
 
 # TODO 将日志写入文件以支持显示更多内容
+log_time(){
+    date "+%Y-%m-%d %H:%M:%S"
+}
 log() {
-    if $debug;then
-        log_info+="\n[$(date)] $1"
+    if [ $debug = true ]; then
+        log_info+="\n[$(log_time)] $1"
     else
-        log_info="\n$(dividing_line "-")\n[$(date)] $1"
+        log_info="\n$(dividing_line "-")\n[$(log_time)] $1"
     fi
 }
 log_warn() {
-    if $debug;then
-        log_info+="\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
+    if [ $debug = true ]; then
+        log_info+="\n[$(log_time)] ${YELLOW}${black}[WARNING]$NORMAL $1"
     else
-        log_info="\n$(dividing_line "-")\n[$(date)] ${YELLOW}${black}[WARNING]$NORMAL $1"
+        log_info="\n$(dividing_line "-")\n[$(log_time)] ${YELLOW}${black}[WARNING]$NORMAL $1"
     fi
 }
 log_err() {
-    if $debug;then
-        log_info+="\n[$(date)] ${RED}[ERROR]$NORMAL $1"
+    if [ $debug = true ]; then
+        log_info+="\n[$(log_time)] ${RED}[ERROR]$NORMAL $1"
     else
-        log_info="\n$(dividing_line "-")\n[$(date)] ${RED}[ERROR]$NORMAL $1"
+        log_info="\n$(dividing_line "-")\n[$(log_time)] ${RED}[ERROR]$NORMAL $1"
     fi
 }
 log_debug() {
-    if [ "$log_info" = "" ]; then
-        log_clr
+    if [ $debug = true ]; then
+        if [ "$log_info" = "" ]; then
+            log_clr
+        fi
+        log_info+="\n[$(log_time)] ${BLUE}[DEBUG]$NORMAL $1"
     fi
-    log_info+="\n[$(date)] ${BLUE}[DEBUG]$NORMAL $1"
 }
 log_clr() {
-    if $debug && [ "$log_info" != "" ];then
+    if [ $debug = true ] && [ "$log_info" != "" ]; then
         log_info="\n$(dividing_line "-")\n"
     else
         log_info="\n$(dividing_line "-")\n"
@@ -859,7 +936,7 @@ confirm_clr() {
         log_clr
         confirm=""
         # log_debug "${BASH_LINENO[0]}: confirm set to ''"
-        
+
     fi
     # if [ "$(contains_element "$confirm" "${confirms[@]}")" != "" ]; then
     #     confirm=""
@@ -904,6 +981,20 @@ mv_u=false
 mv_n=false
 mv_i=false
 mv_f=false
+mv_T=false
+mv_v=false
+
+
+
+cp_r=false
+cp_i=false
+cp_f=false
+cp_v=false
+cp_p=false
+cp_a=false
+cp_u=false
+cp_l=false
+cp_s=false
 
 for arg in "$@"; do
     case $arg in
@@ -917,7 +1008,7 @@ for arg in "$@"; do
         ;;
     esac
 done
-if $debug; then
+if [ $debug = true ]; then
     log_debug "Debug mode is on"
 fi
 
