@@ -34,14 +34,6 @@ show_prop() {
     fi
 }
 
-# bool2str() {
-#     if [ "$1" = true ]; then
-#         echo -en "$2"
-#     else
-#         echo -en "$3"
-#     fi
-# }
-
 pause() {
     read -rn 1 -p "$1"
 }
@@ -130,7 +122,6 @@ handle_error() {
         ;;
     esac
 }
-
 
 cho_move() {
     while true; do
@@ -309,10 +300,10 @@ cho_move() {
                         local file_name="${files[(($cho - 3))]}"
                         if [ "$confirm" = "delete" ]; then
                             if rm -rf "${file_name}" 2>/tmp/ubuntu-cd; then
-                                log "$yellow$file_name$normal deleted"  # rm 成功时记录日志
+                                log "$yellow$file_name$normal deleted" # rm 成功时记录日志
                             else
                                 local error_message=$(cat /tmp/ubuntu-cd)
-                                log_err "$(handle_error "$file_name" "$error_message")"  # rm 失败时记录错误
+                                log_err "$(handle_error "$file_name" "$error_message")" # rm 失败时记录错误
                             fi
                             confirm=""
                         else
@@ -524,16 +515,13 @@ cho_move() {
                         4)
                             mv_u="$(not "$mv_u")"
                             ;;
-                        5) 
+                        5)
                             mv_v="$(not "$mv_v")"
                             ;;
                         6)
                             mv_T="$(not "$mv_T")"
                             ;;
                         *)
-                            # local args=("$mv_b" "$mv_i" "$mv_f" "$mv_n" "$mv_u" "$mv_v" "$mv_T")
-                            # local paras=("b" "i" "f" "n" "u" "v" "T")
-                            # local arg=$(merge_paras ${args[@]} ${paras[@]})
                             local args=()
                             [[ "$mv_b" == true ]] && args+=("-b")
                             [[ "$mv_i" == true ]] && args+=("-i")
@@ -565,7 +553,123 @@ cho_move() {
                         ;;
                     esac
                 elif [ "$mode" = "copy" ]; then
-                    : # TODO
+                    case "$key" in
+                    $'\x00')
+                        case "$cho" in
+                        0)
+                            cp_b="$(not "$cp_b")"
+                            if [ "$cp_b" = true ]; then
+                                cp_n=false
+                            fi
+                            ;;
+                        1)
+                            cp_f="$(not "$cp_f")"
+                            if [ "$cp_f" = true ]; then
+                                cp_i=false
+                                cp_n=false
+                            fi
+                            ;;
+                        2)
+                            cp_i="$(not "$cp_i")"
+                            if [ "$cp_i" = true ]; then
+                                cp_f=false
+                                cp_n=false
+                            fi
+                            ;;
+                        3)
+                            cp_H="$(not "$cp_H")"
+                            if [ "$cp_H" = true ]; then
+                                cp_P=false
+                                cp_L=false
+                            fi
+                            ;;
+                        4)
+                            cp_l="$(not "$cp_l")"
+                            if [ "$cp_l" = true ]; then
+                                cp_s=false
+                            fi
+                            ;;
+                        5)
+                            cp_L="$(not "$cp_L")"
+                            if [ "$cp_L" = true ]; then
+                                cp_P=false
+                                cp_H=false
+                            fi
+                            ;;
+                        6)
+                            cp_n="$(not "$cp_n")"
+                            if [ "$cp_n" = true ]; then
+                                cp_b=false
+                                cp_i=false
+                                cp_f=false
+                            fi
+                            ;;
+                        7)
+                            cp_P="$(not "$cp_P")"
+                            if [ "$cp_P" = true ]; then
+                                cp_L=false
+                                cp_H=false
+                            fi
+                            ;;
+                        8)
+                            cp_r="$(not "$cp_r")"
+                            ;;
+                        9)
+                            cp_s="$(not "$cp_s")"
+                            if [ "$cp_s" = true ]; then
+                                cp_l=false
+                            fi
+                            ;;
+                        10)
+                            cp_T="$(not "$cp_T")"
+                            ;;
+                        11)
+                            cp_u="$(not "$cp_u")"
+                            ;;
+                        12)
+                            cp_v="$(not "$cp_v")"
+                            ;;
+                        13)
+                            cp_x="$(not "$cp_x")"
+                            ;;
+                        *)
+                            local args=()
+                            [[ "$cp_b" == true ]] && args+=("-b")
+                            [[ "$cp_f" == true ]] && args+=("-f")
+                            [[ "$cp_i" == true ]] && args+=("-i")
+                            [[ "$cp_H" == true ]] && args+=("-H")
+                            [[ "$cp_l" == true ]] && args+=("-l")
+                            [[ "$cp_L" == true ]] && args+=("-L")
+                            [[ "$cp_n" == true ]] && args+=("-n")
+                            [[ "$cp_P" == true ]] && args+=("-P")
+                            [[ "$cp_r" == true ]] && args+=("-r")
+                            [[ "$cp_s" == true ]] && args+=("-s")
+                            [[ "$cp_T" == true ]] && args+=("-T")
+                            [[ "$cp_u" == true ]] && args+=("-u")
+                            [[ "$cp_v" == true ]] && args+=("-v")
+                            [[ "$cp_x" == true ]] && args+=("-x")
+                            if ((cho == ${#funcs[@]} - 2)); then
+                                isexit=true
+                                clear
+                                echo "> cp ${args[*]} $target_file $target_dir"
+                                echo "Output:"
+                                cp "${args[@]}" "$target_file" "$target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
+                                if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                                    error_message=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$target_file" "$error_message")"
+                                    isexit=false
+                                fi
+                                echo ""
+                                dividing_line "-"
+                                pause "Press any key to continue..."
+                            else
+                                isexit=true
+                            fi
+                            ;;
+                        esac
+                        break
+                        ;;
+                    esac
                 fi
                 ;;
             esac
@@ -753,7 +857,24 @@ __paste_menu__() {
             "Cancel"
         )
     elif [ "$mode" = "copy" ]; then
-        : # TODO
+        funcs=(
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_b")" "backup" "make a backup of each existing destination file")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_f")" "force" "if an existing destination file cannot be opened, remove it and try again")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_i")" "interactive" "prompt before overwrite")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_H")" "follow CL" "follow command-line symbolic links in SOURCE")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_l")" "link" "hard link files instead of copying")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_L")" "dereference" "always follow symbolic links in SOURCE")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_n")" "no-clobber " "do not overwrite an existing file and do not fail")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_P")" "no-dereference" "never follow symbolic links in SOURCE")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_r")" "recursive" "copy directories recursively")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_s")" "symbolic-link" "make symbolic links instead of copying")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_T")" "no-tardirectory" "treat DEST as a normal file")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_u")" "updated" "updated files")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_v")" "verbose" "explain what is being done")"
+            "$(printf "%s %-15s %s" "$(show_bool "$cp_x")" "one-file-system" "stay on this file system")"
+            "Confirm"
+            "Cancel"
+        )
     fi
 
     # 显示页面
@@ -862,33 +983,32 @@ show_bool() {
     fi
 }
 
-
 # 日志类 ####################################################################################################
 
 # TODO 将日志写入文件以支持显示更多内容
-log_time(){
+log_time() {
     date "+[%Y-%m-%d %H:%M:%S]"
 }
 log() {
-    echo "$(log_time) $1" >> /tmp/ubuntu-cd.log
+    echo "$(log_time) $1" >>/tmp/ubuntu-cd.log
     log_show
 }
 log_warn() {
-    echo "$(log_time) ${YELLOW}${black}[WARNING]$NORMAL $1" >> /tmp/ubuntu-cd.log
+    echo "$(log_time) ${YELLOW}${black}[WARNING]$NORMAL $1" >>/tmp/ubuntu-cd.log
     log_show
 }
 log_err() {
-    echo "$(log_time) ${RED}[ERROR]$NORMAL $1" >> /tmp/ubuntu-cd.log
+    echo "$(log_time) ${RED}[ERROR]$NORMAL $1" >>/tmp/ubuntu-cd.log
     log_show
 }
 log_debug() {
     if [ $debug = true ]; then
-        echo "$(log_time) ${BLUE}[DEBUG]$NORMAL $1" >> /tmp/ubuntu-cd.log
+        echo "$(log_time) ${BLUE}[DEBUG]$NORMAL $1" >>/tmp/ubuntu-cd.log
         log_show
     fi
 }
 log_clr() {
-    : > /tmp/ubuntu-cd.log
+    : >/tmp/ubuntu-cd.log
     log_show
 }
 log_show() {
@@ -932,6 +1052,7 @@ sort_r=false       # 是否倒序排序
 new_type_setting=0 # 新建类型选项
 refresh_time=0     # 刷新时间
 
+# 由于对命令参数知识较为匮乏，目前只包含部分参数
 mv_b=false
 mv_u=false
 mv_n=false
@@ -940,17 +1061,20 @@ mv_f=false
 mv_T=false
 mv_v=false
 
-
-
-cp_r=false
-cp_i=false
+cp_b=false
 cp_f=false
-cp_v=false
-cp_p=false
-cp_a=false
-cp_u=false
+cp_i=false
+cp_H=false
 cp_l=false
+cp_L=false
+cp_n=false
+cp_P=false
+cp_r=false
 cp_s=false
+cp_T=false
+cp_u=false
+cp_v=false
+cp_x=false
 
 for arg in "$@"; do
     case $arg in
