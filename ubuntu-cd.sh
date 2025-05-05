@@ -47,14 +47,18 @@ pause() {
 }
 
 # 填充一整行输出
+# 注意：调用时参数如果是变量，两端不能加颜色代码，否则末尾会有一段距离未填充空格
 pad() {
-    # FIXME 多行内容或超过终端长度的内容无法处理
     local line_length=$(printf '%s' "$1" | sed $'s/\033\[[0-9;]*m//g' | wc -c) # 计算行长度
     local terminal_width=$(tput cols)                                          # 计算终端宽度
 
+    # 处理多行内容
+    while ((line_length > terminal_width)); do
+        ((line_length-=terminal_width))
+    done
+
     # 计算需要填充的空格数量
-    # FIXME 末尾实际仍然有未填充距离，8 是调试时缺失的字符数
-    local padding_length=$(echo "($terminal_width - $line_length) % $terminal_width + 8" | bc)
+    local padding_length=$(echo "$terminal_width - $line_length" | bc)
 
     local padding=$(printf '%*s' $padding_length '') # 生成填充空格
     echo -e "$1$padding"
@@ -64,9 +68,13 @@ centering(){
     local terminal_width=$(tput cols)
     local line_length=$(printf '%s' "$1" | sed $'s/\033\[[0-9;]*m//g' | wc -c)
     # 计算左侧空格数，使用 (cols - len + 1) 处理奇偶问题
-    left=$(echo "( ($terminal_width - $line_length + 1) / 2 )" | bc)
+    local left=$(echo "( ($terminal_width - $line_length + 1) / 2 )" | bc)
     # 使用printf输出居中文本
-    printf "%*s%s\n" $left "" "$1"
+    printf "%*s%s\n" "$left" "" "$1"
+}
+
+title(){
+    echo -e "$RED$black$(pad "$(centering "$1")")$NORMAL$normal"
 }
 
 dividing_line() {
@@ -517,7 +525,9 @@ refresh_cooling() {
 # 主菜单
 __main_menu__() {
     # 显示页眉
+    title "Ubuntu-CD Explorer"
     echo -e "[N]ew${TAB}[Del]ete${TAB}[M]ove(Cut)${TAB}[C]opy${TAB}[P]aste${TAB}[R]ename${TAB}[S]earch${TAB}pr[o]perties${TAB}re[F]resh${TAB}${red}[Q]uit$normal"
+    dividing_line "-"
     echo -e "Current directory: $yellow$(pwd)$normal"
 
     # 处理文件列表
@@ -602,7 +612,7 @@ __main_menu__() {
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
-            pad "$GREEN$func"
+            echo -e "$GREEN$(pad "$func")"
         else
             echo -e "$NORMAL$func"
         fi
@@ -624,8 +634,8 @@ __main_menu__() {
 # 新建菜单
 __new_menu__() {
     # 显示页眉
-    echo "New"
-    dividing_line "-"
+    centering "New"
+    dividing_line "="
     echo -e "Current directory: $yellow$(pwd)$normal"
 
     # 显示页面
@@ -634,7 +644,7 @@ __new_menu__() {
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
-            pad "$GREEN$func"
+            echo -e "$GREEN$(pad "$func")"
         else
             echo -e "$NORMAL$func"
         fi
@@ -677,14 +687,14 @@ __paste_menu__() {
             "Cancel"
         )
     elif [ "$mode" = "copy" ]; then
-        :
+        : # TODO
     fi
 
     # 显示页面
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
-            pad "$GREEN$func"
+            echo -e "$GREEN$(pad "$func")"
         else
             echo -e "$NORMAL$func"
         fi
