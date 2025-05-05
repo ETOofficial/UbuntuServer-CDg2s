@@ -252,11 +252,11 @@ cho_move() {
                             cd ..
                             cho=0
                             refresh=true
-                            log_clr
+                            # log_clr
                             ;;
 
                         *)
-                            log_clr
+                            # log_clr
                             local file_name="${files[(($cho - 3))]}"
                             local file_type="$(file -b "$file_name")"
                             if [ "$file_type" = "directory" ]; then
@@ -277,7 +277,8 @@ cho_move() {
                         # 刷新
                         confirm_clr
                         if [ "$(refresh_cooling)" = true ]; then # 限制刷新频率
-                            break
+                            log_debug "Refresh cooling"
+                            continue
                         fi
                         refresh=true
                         log "Refreshed"
@@ -307,18 +308,16 @@ cho_move() {
 
                         local file_name="${files[(($cho - 3))]}"
                         if [ "$confirm" = "delete" ]; then
-                            log "$yellow$file_name$normal deleted"
-                            rm -rf "${file_name}" 2>/tmp/ubuntu-cd || {
+                            if rm -rf "${file_name}" 2>/tmp/ubuntu-cd; then
+                                log "$yellow$file_name$normal deleted"  # rm 成功时记录日志
+                            else
                                 local error_message=$(cat /tmp/ubuntu-cd)
-                                log_err "$(handle_error "$file_name" "$error_message")"
-                            }
+                                log_err "$(handle_error "$file_name" "$error_message")"  # rm 失败时记录错误
+                            fi
                             confirm=""
                         else
-                            confirm_cho="$cho"
                             log_warn "You are trying to ${red}delete$normal $yellow\"$file_name\"$normal, if you are sure, please type again."
-                            # if [ "$debug" = true ]; then
-                            #     log_debug "confirm=$confirm"
-                            # fi
+                            # log_debug "confirm=$confirm"
                             confirm="delete"
                         fi
                         refresh=true
@@ -343,13 +342,6 @@ cho_move() {
                         ;;
                     "p")
                         # 粘贴
-
-                        # if ((cho != confirm_cho)); then # confirm_clr
-                        #     confirm=""
-                        # fi
-
-                        reload=true
-
                         if [ "$copy_name" = "" ]; then
                             if [ "$move_name" = "" ]; then
                                 log_err "nothing to paste"
@@ -357,11 +349,12 @@ cho_move() {
                             else
                                 if [ "$move_name" != "$(pwd)/" ] || [ "$confirm" = "p" ]; then
                                     confirm=""
-                                    log "$yellow$move_name$normal moved"
-                                    mv "$move_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
+                                    if mv "$move_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
+                                        log "$yellow$move_name$normal moved"
+                                    else
                                         local error_message=$(cat /tmp/ubuntu-cd)
                                         log_err "$(handle_error "" "$error_message")"
-                                    }
+                                    fi
                                     move_name=""
                                     refresh=true
                                 else
@@ -370,18 +363,20 @@ cho_move() {
                                 fi
                             fi
                         elif [ "${copy_name: -1}" = "/" ]; then
-                            log "$yellow$copy_name$normal pasted"
-                            cp -r "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
+                            if cp -r "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
+                                log "$yellow$copy_name$normal pasted"
+                            else
                                 local error_message=$(cat /tmp/ubuntu-cd)
                                 log_err "$(handle_error "" "$error_message")"
-                            }
+                            fi
                             # copy_name=""
                         else
-                            log "$yellow$copy_name$normal pasted"
-                            cp "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd || {
+                            if cp "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
+                                log "$yellow$copy_name$normal pasted"
+                            else
                                 local error_message=$(cat /tmp/ubuntu-cd)
                                 log_err "$(handle_error "" "$error_message")"
-                            }
+                            fi
                             # copy_name=""
                         fi
                         refresh=true
@@ -431,14 +426,14 @@ cho_move() {
                     confirm_clr
                     if [ "$key" = $'\x7f' ]; then
                         new_name="${new_name%?}"
-                        log_clr
+                        # log_clr
                     elif [ "$key" = "\\" ]; then
                         log_err "unsupported charactor \"\\\""
                     elif (($(printf '%s' "$new_name" | wc -c) >= 255)); then
                         log_err "name too long"
                     else
                         new_name+="$key"
-                        log_clr
+                        # log_clr
                     fi
                     local unrecommend_chars=("<" ">" "?" "*" "|" "\"" "'" " ")
                     local unrecommend_char="$(contains_element "$new_name" "${unrecommend_chars[@]}")"
@@ -459,21 +454,23 @@ cho_move() {
                             if [ "$new_name" = "" ]; then
                                 log_err "name cannot be empty"
                             elif [ "${new_type_options[$new_type_setting]}" = "file" ]; then
-                                log "$yellow$new_name$normal created"
-                                isexit=true
-                                touch "$new_name" 2>"/tmp/ubuntu-cd" || {
+                                if touch "$new_name" 2>"/tmp/ubuntu-cd"; then
+                                    log "$yellow$new_name$normal created"
+                                    isexit=true
+                                else
                                     local error_message=$(cat /tmp/ubuntu-cd)
                                     log_err "$(handle_error "$new_name" "$error_message")"
                                     isexit=false
-                                }
+                                fi
                             elif [ "${new_type_options[$new_type_setting]}" = "dirctory" ]; then
-                                log "$yellow$new_name$normal created"
-                                isexit=true
-                                mkdir "$new_name" 2>"/tmp/ubuntu-cd" || {
+                                if mkdir "$new_name" 2>"/tmp/ubuntu-cd"; then
+                                    log "$yellow$new_name$normal created"
+                                    isexit=true
+                                else
                                     local error_message=$(cat /tmp/ubuntu-cd)
                                     log_err "$(handle_error "$new_name" "$error_message")"
                                     isexit=false
-                                }
+                                fi
                             fi
                             break
                         elif ((cho == 1)); then # 输入确认
@@ -576,35 +573,14 @@ cho_move() {
     done
 }
 
-# merge_paras(){
-#     local merge="-"
-#     local arg_num=$#
-#     local i=0
-#     for para in "$@"; do
-#         if [ "$para" = false ] || [ "$para" = true ]; then
-#             if [ "$para" = true ]; then
-#                 merge="$merge${para2[$i]}"
-#             fi
-#         else
-#             break
-#         fi
-#         ((i++))
-#     done
-#     if [ "$merge" = "-" ]; then
-#         echo ""
-#     else
-#         echo "$merge"
-#     fi
-# }
-
 # 返回值：如果刷新时间已过设定时长，则返回 false，否则返回 true
 refresh_cooling() {
     local time=$(date +%s.%N)
-    bc <<<"$time - $refresh_time > 0.1"
-    if ((bc == 1)); then
-        echo false
-    else
+    # 返回 true 表示需要冷却（距离上次刷新不足0.1秒）
+    if awk -v t="$time" -v rt="$refresh_time" 'BEGIN { exit (t - rt > 0.1) }'; then
         echo true
+    else
+        echo false
     fi
 }
 
@@ -622,8 +598,8 @@ __main_menu__() {
     # 仅需要刷新时处理，减少卡顿
     # FIXME 快速搜索内容变化时仍然会卡顿，将搜索栏优先刷新
     # TODO 快速搜索功能实现
-    local time=$(date +%s.%N)
     if [ $refresh = true ]; then
+        refresh_time=$(date +%s.%N)
         echo "loading..."
         echo -en "\033[1A" # 将光标向上移动n行
         log_debug "refreshed"
@@ -633,7 +609,7 @@ __main_menu__() {
 
         # 排序
         local sort_mode="${sort_options[$sort_setting]}"
-        # TODO 倒序排列、其余排序方式
+        # TODO 其余排序方式
         if [ "$sort_mode" = "name" ]; then
             if [ $sort_r = true ]; then
                 files=($(printf "%s\n" "${files[@]}" | sort -r))
@@ -815,7 +791,7 @@ new_menu() {
     confirm_clr
     page="new"
     cho=0
-    log_clr
+    # log_clr
 
     while [ "$isexit" = false ]; do
         clear
@@ -838,7 +814,7 @@ paste_menu() {
     confirm_clr
     page="paste"
     cho=0
-    log_clr
+    # log_clr
 
     while [ "$isexit" = false ]; do
         clear
@@ -891,56 +867,36 @@ show_bool() {
 
 # TODO 将日志写入文件以支持显示更多内容
 log_time(){
-    date "+%Y-%m-%d %H:%M:%S"
+    date "+[%Y-%m-%d %H:%M:%S]"
 }
 log() {
-    if [ $debug = true ]; then
-        log_info+="\n[$(log_time)] $1"
-    else
-        log_info="\n$(dividing_line "-")\n[$(log_time)] $1"
-    fi
+    echo "$(log_time) $1" >> /tmp/ubuntu-cd.log
+    log_show
 }
 log_warn() {
-    if [ $debug = true ]; then
-        log_info+="\n[$(log_time)] ${YELLOW}${black}[WARNING]$NORMAL $1"
-    else
-        log_info="\n$(dividing_line "-")\n[$(log_time)] ${YELLOW}${black}[WARNING]$NORMAL $1"
-    fi
+    echo "$(log_time) ${YELLOW}${black}[WARNING]$NORMAL $1" >> /tmp/ubuntu-cd.log
+    log_show
 }
 log_err() {
-    if [ $debug = true ]; then
-        log_info+="\n[$(log_time)] ${RED}[ERROR]$NORMAL $1"
-    else
-        log_info="\n$(dividing_line "-")\n[$(log_time)] ${RED}[ERROR]$NORMAL $1"
-    fi
+    echo "$(log_time) ${RED}[ERROR]$NORMAL $1" >> /tmp/ubuntu-cd.log
+    log_show
 }
 log_debug() {
     if [ $debug = true ]; then
-        if [ "$log_info" = "" ]; then
-            log_clr
-        fi
-        log_info+="\n[$(log_time)] ${BLUE}[DEBUG]$NORMAL $1"
+        echo "$(log_time) ${BLUE}[DEBUG]$NORMAL $1" >> /tmp/ubuntu-cd.log
+        log_show
     fi
 }
 log_clr() {
-    if [ $debug = true ] && [ "$log_info" != "" ]; then
-        log_info="\n$(dividing_line "-")\n"
-    else
-        log_info="\n$(dividing_line "-")\n"
-    fi
+    : > /tmp/ubuntu-cd.log
+    log_show
+}
+log_show() {
+    log_info="$(dividing_line "-")\n$(tail -n 5 /tmp/ubuntu-cd.log)"
 }
 
 confirm_clr() {
-    # local confirms=("delete" "p")
-    if [ "$confirm" != "" ]; then
-        log_clr
-        confirm=""
-        # log_debug "${BASH_LINENO[0]}: confirm set to ''"
-
-    fi
-    # if [ "$(contains_element "$confirm" "${confirms[@]}")" != "" ]; then
-    #     confirm=""
-    # fi
+    confirm=""
 }
 
 show_what_has_been_pressed() {
@@ -1008,6 +964,8 @@ for arg in "$@"; do
         ;;
     esac
 done
+
+log_clr
 if [ $debug = true ]; then
     log_debug "Debug mode is on"
 fi
