@@ -103,22 +103,25 @@ not() {
 
 handle_error() {
     local file_name=$1
-    local error_message=$2
-    case "$error_message" in
+    local errmsg=$2
+    case "$errmsg" in
     *"Permission denied"*)
         echo -e "Permission denied: $file_name\n${yellow}You do not have sufficient privileges, please confirm the current user privileges or switch to a user with sufficient privileges. You can also contact the administrator for help.$normal"
         ;;
     *"No such file or directory"*)
         echo -e "No such file or directory: $file_name\n${yellow}The directory was not found, please check if it exists.$normal"
         ;;
-    *"File exists"*)
+    *"File exists"* | *"mv: overwrite"*)
         echo -e "File exists: $file_name\n${yellow}The file already exists, please choose another name.$normal"
         ;;
     *"Directory not empty"*)
         echo -e "Directory not empty: $file_name\n${yellow}Discover non-empty directories with duplicate names, please delete it first.$normal"
         ;;
+    *"are the same file"*)
+        echo -e "Same file: $file_name\n${yellow}The file name not changed$normal"
+        ;;
     *)
-        echo -e "Error: $file_name ($error_message)"
+        echo -e "Error: $file_name ($errmsg)"
         ;;
     esac
 }
@@ -132,15 +135,17 @@ cho_move() {
         #   1.请检查每项处理是否拥有常驻处理项或相应的替代处理
         #       常驻处理项：
         #           confirm_clr
-        # FIXME 已知问题：实际上无法读取回车，按回车读取的结果是空格
+        # FIXME 已知问题：
+        #   1. 实际上无法读取回车，按回车读取的结果是空格。空格也被读取成空格。
+        #   2. 重命名界面连续按两次回车后有概率出现错误：按上下键都相当于回车。疑似按太快检测有延迟
         if [ "$key" = $'\x1b' ]; then # 用于检测方向键
-            # 这里不能 confirm_clr ，否则会无法确认，原因未知。
+            # 这里不能 confirm_clr ，否则会无法确认。
             # confirm_clr
             # 读取后续两个字符
             read -rsn2 -t 0.1 rest
             case "$rest" in
             # Up
-            '[A')
+            '[A' | '^[[A')
                 confirm_clr
                 ((cho--))
                 if ((cho == -1)); then
@@ -148,7 +153,7 @@ cho_move() {
                 fi
                 ;;
             # Down
-            '[B')
+            '[B' | '^[[B')
                 confirm_clr
                 ((cho++))
                 if ((cho == ${#funcs[@]})); then
@@ -156,7 +161,7 @@ cho_move() {
                 fi
                 ;;
             # Right
-            '[C')
+            '[C' | '^[[C')
                 confirm_clr
                 if [ "$page" = "main" ]; then
                     if ((cho == 1)); then
@@ -176,7 +181,7 @@ cho_move() {
                 fi
                 ;;
             # Left
-            '[D')
+            '[D' | '^[[D')
                 confirm_clr
                 if [ "$page" = "main" ]; then
                     if ((cho == 1)); then
@@ -252,8 +257,8 @@ cho_move() {
                             local file_type="$(file -b "$file_name")"
                             if [ "$file_type" = "directory" ]; then
                                 cd "$file_name" 2>/tmp/ubuntu-cd || {
-                                    local error_message=$(cat /tmp/ubuntu-cd)
-                                    log_err "$(handle_error "$file_name" "$error_message")"
+                                    local errmsg=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$file_name" "$errmsg")"
                                 }
                                 cho=0
                                 refresh=true
@@ -302,8 +307,8 @@ cho_move() {
                             if rm -rf "${file_name}" 2>/tmp/ubuntu-cd; then
                                 log "$yellow$file_name$normal deleted" # rm 成功时记录日志
                             else
-                                local error_message=$(cat /tmp/ubuntu-cd)
-                                log_err "$(handle_error "$file_name" "$error_message")" # rm 失败时记录错误
+                                local errmsg=$(cat /tmp/ubuntu-cd)
+                                log_err "$(handle_error "$file_name" "$errmsg")" # rm 失败时记录错误
                             fi
                             confirm=""
                         else
@@ -343,8 +348,8 @@ cho_move() {
                                     if mv "$move_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
                                         log "$yellow$move_name$normal moved"
                                     else
-                                        local error_message=$(cat /tmp/ubuntu-cd)
-                                        log_err "$(handle_error "" "$error_message")"
+                                        local errmsg=$(cat /tmp/ubuntu-cd)
+                                        log_err "$(handle_error "" "$errmsg")"
                                     fi
                                     move_name=""
                                     refresh=true
@@ -357,16 +362,16 @@ cho_move() {
                             if cp -r "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
                                 log "$yellow$copy_name$normal pasted"
                             else
-                                local error_message=$(cat /tmp/ubuntu-cd)
-                                log_err "$(handle_error "" "$error_message")"
+                                local errmsg=$(cat /tmp/ubuntu-cd)
+                                log_err "$(handle_error "" "$errmsg")"
                             fi
                             # copy_name=""
                         else
                             if cp "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
                                 log "$yellow$copy_name$normal pasted"
                             else
-                                local error_message=$(cat /tmp/ubuntu-cd)
-                                log_err "$(handle_error "" "$error_message")"
+                                local errmsg=$(cat /tmp/ubuntu-cd)
+                                log_err "$(handle_error "" "$errmsg")"
                             fi
                             # copy_name=""
                         fi
@@ -380,9 +385,13 @@ cho_move() {
                             log_err "nothing to paste"
                             break
                         elif [ "$copy_name" = "" ]; then
-                            paste_menu "$move_name" "$(pwd)/"
+                            paste_target_file="$move_name"
+                            paste_target_dir="$(pwd)/"
+                            paste_menu
                         else
-                            paste_menu "$copy_name" "$(pwd)/"
+                            paste_target_file="$copy_name"
+                            paste_target_dir="$(pwd)/"
+                            paste_menu
                         fi
                         refresh=true
                         break
@@ -399,6 +408,15 @@ cho_move() {
                         log "$yellow$file_name$normal cuted"
                         copy_name=""
                         break
+                        ;;
+                    "r")
+                        # 重命名
+                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                            continue
+                        fi
+                        confirm_clr
+                        rename_target_file="${files[(($cho - 3))]}"
+                        rename_menu
                         ;;
                     *)
                         if [ $debug = true ]; then
@@ -420,6 +438,8 @@ cho_move() {
                         # log_clr
                     elif [ "$key" = "\\" ]; then
                         log_err "unsupported charactor \"\\\""
+                    elif [ "$key" = $'\x00' ]; then
+                        ((cho++))
                     elif (($(printf '%s' "$new_name" | wc -c) >= 255)); then
                         log_err "name too long"
                     else
@@ -449,8 +469,8 @@ cho_move() {
                                     log "$yellow$new_name$normal created"
                                     isexit=true
                                 else
-                                    local error_message=$(cat /tmp/ubuntu-cd)
-                                    log_err "$(handle_error "$new_name" "$error_message")"
+                                    local errmsg=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$new_name" "$errmsg")"
                                     isexit=false
                                 fi
                             elif [ "${new_type_options[$new_type_setting]}" = "dirctory" ]; then
@@ -458,15 +478,15 @@ cho_move() {
                                     log "$yellow$new_name$normal created"
                                     isexit=true
                                 else
-                                    local error_message=$(cat /tmp/ubuntu-cd)
-                                    log_err "$(handle_error "$new_name" "$error_message")"
+                                    local errmsg=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$new_name" "$errmsg")"
                                     isexit=false
                                 fi
                             fi
                             break
-                        elif ((cho == 1)); then # 输入确认
-                            ((cho++))
-                            break
+                        # elif ((cho == 1)); then # 输入确认
+                        #     ((cho++))
+                        #     break
                         fi
                         ;;
                     *)
@@ -533,12 +553,12 @@ cho_move() {
                             if ((cho == ${#funcs[@]} - 2)); then
                                 isexit=true
                                 clear
-                                echo "> mv ${args[*]} $target_file $target_dir"
+                                echo "> mv ${args[*]} $paste_target_file $paste_target_dir"
                                 echo "Output:"
-                                mv "${args[@]}" "$target_file" "$target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
+                                mv "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
                                 if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                                    error_message=$(cat /tmp/ubuntu-cd)
-                                    log_err "$(handle_error "$target_file" "$error_message")"
+                                    errmsg=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$paste_target_file" "$errmsg")"
                                     isexit=false
                                 fi
                                 echo ""
@@ -651,12 +671,12 @@ cho_move() {
                             if ((cho == ${#funcs[@]} - 2)); then
                                 isexit=true
                                 clear
-                                echo "> cp ${args[*]} $target_file $target_dir"
+                                echo "> cp ${args[*]} $paste_target_file $paste_target_dir"
                                 echo "Output:"
-                                cp "${args[@]}" "$target_file" "$target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
+                                cp "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
                                 if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                                    error_message=$(cat /tmp/ubuntu-cd)
-                                    log_err "$(handle_error "$target_file" "$error_message")"
+                                    errmsg=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$paste_target_file" "$errmsg")"
                                     isexit=false
                                 fi
                                 echo ""
@@ -667,6 +687,62 @@ cho_move() {
                             fi
                             ;;
                         esac
+                        break
+                        ;;
+                    esac
+                fi
+                ;;
+            "rename")
+                if ((cho == 0)); then # 名称输入行
+                    confirm_clr
+                    if [ "$key" = $'\x7f' ]; then
+                        rename_name="${rename_name%?}"
+                    elif [ "$key" = "\\" ]; then
+                        log_err "unsupported charactor \"\\\""
+                    elif [ "$key" = $'\x00' ]; then
+                        ((cho++))
+                    elif (($(printf '%s' "$rename_name" | wc -c) >= 255)); then
+                        log_err "name too long"
+                    else
+                        rename_name+="$key"
+                    fi
+                    local unrecommend_chars=("<" ">" "?" "*" "|" "\"" "'" " ")
+                    local unrecommend_char="$(contains_element "$rename_name" "${unrecommend_chars[@]}")"
+                    if [ "$unrecommend_char" != "" ]; then
+                        log_warn "unrecommend charactor \"$unrecommend_char\"\nThis character is not recommended because they have special meanings in the shell and may cause command execution errors."
+                    fi
+                    break
+                else
+                    case "$key" in
+                    $'\x00')
+                        # 回车
+                        confirm_clr
+                        if ((cho == ${#funcs[@]} - 1)); then # 取消
+                            isexit=true
+                            break
+                        elif ((cho == ${#funcs[@]} - 2)); then # 确认
+                            if [ "$rename_name" = "" ]; then
+                                log_err "name cannot be empty"
+                            else
+                                # 覆盖不会报错，目前只能让用户交互
+                                if mv -i "$rename_target_file" "$rename_name" 2>"/tmp/ubuntu-cd"; then
+                                    log "$yellow$rename_target_file$normal renamed to $yellow$rename_name$normal"
+                                    isexit=true
+                                else
+                                    local errmsg=$(cat /tmp/ubuntu-cd)
+                                    log_err "$(handle_error "$rename_name" "$errmsg")"
+                                    isexit=false
+                                fi
+                            fi
+                            break
+                        elif ((cho == 0)); then # 输入确认
+                            ((cho++))
+                            break
+                        fi
+                        ;;
+                    *)
+                        confirm_clr
+                        show_what_has_been_pressed
                         break
                         ;;
                     esac
@@ -708,8 +784,11 @@ __main_menu__() {
         echo -en "\033[1A" # 将光标向上移动n行
         log_debug "refreshed"
         shopt -s nullglob # 设置nullglob选项，使没有匹配时返回空数组
+        # TODO 增加隐藏功能开关
+        shopt -s dotglob  # 启用包含隐藏文件的glob模式
         files=(*)         # 将当前目录下的所有文件和目录存入数组
         shopt -u nullglob # 取消nullglob选项，避免影响后续命令
+        shopt -u dotglob  # 恢复默认的glob模式
 
         # 排序
         local sort_mode="${sort_options[$sort_setting]}"
@@ -760,7 +839,9 @@ __main_menu__() {
             files=("${sorted_files[@]}")
         fi
 
+        # TODO 翻页功能
         files_form=() # 用于存储每行应该显示的内容
+
         local i=0
         for file in "${files[@]}"; do
             # 获取文件的修改日期
@@ -833,8 +914,8 @@ __new_menu__() {
 __paste_menu__() {
     # 显示页眉
     title "Paste"
-    echo -e "Target file: $yellow$target_file$normal"
-    echo -e "Target directory: $yellow$target_dir$normal"
+    echo -e "Target file: $yellow$paste_target_file$normal"
+    echo -e "Target directory: $yellow$paste_target_dir$normal"
     if [ "$copy_name" = "" ]; then
         echo -e "Mode: ${yellow}Cut$normal"
         local mode="cut"
@@ -897,6 +978,28 @@ __paste_menu__() {
     echo -e "$log_info"
 }
 
+__rename_menu__() {
+    # 显示页眉
+    title "Rename"
+    echo -e "Target file: $yellow$rename_target_file$normal"
+
+    funcs=("Name: $rename_name" "Confirm" "Cancel")
+
+    local i=0
+    for func in "${funcs[@]}"; do
+        if ((cho == i)); then
+            echo -e "$GREEN$(pad "$func")"
+        else
+            echo -e "$NORMAL$func"
+        fi
+        ((i++))
+    done
+
+    # 显示页尾
+    echo -e "$NORMAL"
+    echo -e "$log_info"
+}
+
 # 之后的 menu 函数用于直接调用
 main_menu() {
     # log_clr
@@ -926,10 +1029,9 @@ new_menu() {
     refresh=true
 }
 
-# 参数：目标文件名 目标目录
 paste_menu() {
-    target_file=$1
-    target_dir=$2
+    # paste_target_file=$1
+    # paste_target_dir=$2
 
     funcs=()
     confirm_clr
@@ -948,6 +1050,25 @@ paste_menu() {
     cho=0
     refresh=true
 }
+
+rename_menu() {
+    funcs=()
+    confirm_clr
+    page="rename"
+    cho=0
+
+    while [ "$isexit" = false ]; do
+        clear
+        __rename_menu__
+        cho_move
+    done
+
+    isexit=false
+    page="main"
+    cho=0
+    refresh=true
+}
+
 
 show_sort_by() {
     echo -n "Sort by(reverse:$sort_r):$TAB"
@@ -1008,11 +1129,11 @@ log_debug() {
     fi
 }
 log_clr() {
-    : >/tmp/ubuntu-cd.log
+    echo "Start Logging >>>" >/tmp/ubuntu-cd.log
     log_show
 }
 log_show() {
-    log_info="$(dividing_line "-")\n$(tail -n 5 /tmp/ubuntu-cd.log)"
+    log_info="$(dividing_line "-")\n$(tail -n $log_info_line /tmp/ubuntu-cd.log)"
 }
 
 confirm_clr() {
@@ -1051,6 +1172,9 @@ sort_setting=0     # 排序选项
 sort_r=false       # 是否倒序排序
 new_type_setting=0 # 新建类型选项
 refresh_time=0     # 刷新时间
+log_info_line=5    # 日志信息行数
+file_list_line=10  # 文件列表行数
+file_list_page=0   # 
 
 # 由于对命令参数知识较为匮乏，目前只包含部分参数
 mv_b=false
