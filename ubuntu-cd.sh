@@ -170,6 +170,9 @@ cho_move() {
                             sort_setting=0
                         fi
                         refresh=true
+                    elif ((cho == ${#funcs[@]} - 1)) && ((file_list_page < file_list_page_max)); then
+                        ((file_list_page++))
+                        refresh=true
                     fi
                 elif [ "$page" = "new" ]; then
                     if ((cho == 0)); then
@@ -189,6 +192,9 @@ cho_move() {
                         if ((sort_setting == -1)); then
                             sort_setting=$((${#sort_options[@]} - 1))
                         fi
+                        refresh=true
+                    elif ((cho == ${#funcs[@]} - 1)) && ((file_list_page > 0)); then
+                        ((file_list_page--))
                         refresh=true
                     fi
                 elif [ "$page" = "new" ]; then
@@ -252,18 +258,19 @@ cho_move() {
                             ;;
 
                         *)
-                            # log_clr
-                            local file_name="${files[(($cho - 3))]}"
-                            local file_type="$(file -b "$file_name")"
-                            if [ "$file_type" = "directory" ]; then
-                                cd "$file_name" 2>/tmp/ubuntu-cd || {
-                                    local errmsg=$(cat /tmp/ubuntu-cd)
-                                    log_err "$(handle_error "$file_name" "$errmsg")"
-                                }
-                                cho=0
-                                refresh=true
-                            else
-                                log_err "unsupported file type: $file_name | $file_type"
+                            if ((cho != ${#funcs[@]} - 1)); then
+                                local file_name="${files[(($cho - 3))]}"
+                                local file_type="$(file -b "$file_name")"
+                                if [ "$file_type" = "directory" ]; then
+                                    cd "$file_name" 2>"$errfile_path" || {
+                                        local errmsg=$(cat "$errfile_path")
+                                        log_err "$(handle_error "$file_name" "$errmsg")"
+                                    }
+                                    cho=0
+                                    refresh=true
+                                else
+                                    log_err "unsupported file type: $file_name | $file_type"
+                                fi
                             fi
                             ;;
                         esac
@@ -294,7 +301,7 @@ cho_move() {
                         ;;
                     "~")
                         # 删除（delete）
-                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
                             continue
                         fi
 
@@ -304,10 +311,10 @@ cho_move() {
 
                         local file_name="${files[(($cho - 3))]}"
                         if [ "$confirm" = "delete" ]; then
-                            if rm -rf "${file_name}" 2>/tmp/ubuntu-cd; then
+                            if rm -rf "${file_name}" 2>"$errfile_path"; then
                                 log "$yellow$file_name$normal deleted" # rm 成功时记录日志
                             else
-                                local errmsg=$(cat /tmp/ubuntu-cd)
+                                local errmsg=$(cat "$errfile_path")
                                 log_err "$(handle_error "$file_name" "$errmsg")" # rm 失败时记录错误
                             fi
                             confirm=""
@@ -321,7 +328,7 @@ cho_move() {
                         ;;
                     "c")
                         # 复制
-                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
                             continue
                         fi
 
@@ -345,10 +352,10 @@ cho_move() {
                             else
                                 if [ "$move_name" != "$(pwd)/" ] || [ "$confirm" = "p" ]; then
                                     confirm=""
-                                    if mv "$move_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
+                                    if mv "$move_name" "$(pwd)/" 2>"$errfile_path"; then
                                         log "$yellow$move_name$normal moved"
                                     else
-                                        local errmsg=$(cat /tmp/ubuntu-cd)
+                                        local errmsg=$(cat "$errfile_path")
                                         log_err "$(handle_error "" "$errmsg")"
                                     fi
                                     move_name=""
@@ -359,18 +366,18 @@ cho_move() {
                                 fi
                             fi
                         elif [ "${copy_name: -1}" = "/" ]; then
-                            if cp -r "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
+                            if cp -r "$copy_name" "$(pwd)/" 2>"$errfile_path"; then
                                 log "$yellow$copy_name$normal pasted"
                             else
-                                local errmsg=$(cat /tmp/ubuntu-cd)
+                                local errmsg=$(cat "$errfile_path")
                                 log_err "$(handle_error "" "$errmsg")"
                             fi
                             # copy_name=""
                         else
-                            if cp "$copy_name" "$(pwd)/" 2>/tmp/ubuntu-cd; then
+                            if cp "$copy_name" "$(pwd)/" 2>"$errfile_path"; then
                                 log "$yellow$copy_name$normal pasted"
                             else
-                                local errmsg=$(cat /tmp/ubuntu-cd)
+                                local errmsg=$(cat "$errfile_path")
                                 log_err "$(handle_error "" "$errmsg")"
                             fi
                             # copy_name=""
@@ -398,7 +405,7 @@ cho_move() {
                         ;;
                     "m")
                         # 移动（剪切）
-                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
                             continue
                         fi
 
@@ -411,7 +418,7 @@ cho_move() {
                         ;;
                     "r")
                         # 重命名
-                        if ((cho == 0)) && ((cho == 1)) && ((cho == 2)); then
+                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
                             continue
                         fi
                         confirm_clr
@@ -426,7 +433,6 @@ cho_move() {
                         fi
                         ;;
                     esac
-
                 fi
                 ;;
             "new")
@@ -465,20 +471,20 @@ cho_move() {
                             if [ "$new_name" = "" ]; then
                                 log_err "name cannot be empty"
                             elif [ "${new_type_options[$new_type_setting]}" = "file" ]; then
-                                if touch "$new_name" 2>"/tmp/ubuntu-cd"; then
+                                if touch "$new_name" 2>""$errfile_path""; then
                                     log "$yellow$new_name$normal created"
                                     isexit=true
                                 else
-                                    local errmsg=$(cat /tmp/ubuntu-cd)
+                                    local errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$new_name" "$errmsg")"
                                     isexit=false
                                 fi
                             elif [ "${new_type_options[$new_type_setting]}" = "dirctory" ]; then
-                                if mkdir "$new_name" 2>"/tmp/ubuntu-cd"; then
+                                if mkdir "$new_name" 2>""$errfile_path""; then
                                     log "$yellow$new_name$normal created"
                                     isexit=true
                                 else
-                                    local errmsg=$(cat /tmp/ubuntu-cd)
+                                    local errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$new_name" "$errmsg")"
                                     isexit=false
                                 fi
@@ -555,9 +561,9 @@ cho_move() {
                                 clear
                                 echo "> mv ${args[*]} $paste_target_file $paste_target_dir"
                                 echo "Output:"
-                                mv "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
+                                mv "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee ""$errfile_path""
                                 if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                                    errmsg=$(cat /tmp/ubuntu-cd)
+                                    errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$paste_target_file" "$errmsg")"
                                     isexit=false
                                 fi
@@ -673,9 +679,9 @@ cho_move() {
                                 clear
                                 echo "> cp ${args[*]} $paste_target_file $paste_target_dir"
                                 echo "Output:"
-                                cp "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee "/tmp/ubuntu-cd"
+                                cp "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee ""$errfile_path""
                                 if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                                    errmsg=$(cat /tmp/ubuntu-cd)
+                                    errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$paste_target_file" "$errmsg")"
                                     isexit=false
                                 fi
@@ -725,11 +731,11 @@ cho_move() {
                                 log_err "name cannot be empty"
                             else
                                 # 覆盖不会报错，目前只能让用户交互
-                                if mv -i "$rename_target_file" "$rename_name" 2>"/tmp/ubuntu-cd"; then
+                                if mv -i "$rename_target_file" "$rename_name" 2>""$errfile_path""; then
                                     log "$yellow$rename_target_file$normal renamed to $yellow$rename_name$normal"
                                     isexit=true
                                 else
-                                    local errmsg=$(cat /tmp/ubuntu-cd)
+                                    local errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$rename_name" "$errmsg")"
                                     isexit=false
                                 fi
@@ -768,10 +774,14 @@ refresh_cooling() {
 
 # 主菜单
 __main_menu__() {
+    if ((cho == ${#funcs[@]} - 1)); then
+        local refresh_cho=true
+    else
+        local refresh_cho=false
+    fi
     # 显示页眉
     title "Ubuntu-CD Explorer"
-    echo -e "[N]ew${TAB}[Del]ete${TAB}[M]ove(Cut)${TAB}[C]opy${TAB}[P]aste${TAB}[R]ename${TAB}[S]earch${TAB}pr[o]perties${TAB}re[F]resh${TAB}${red}[Q]uit$normal"
-    dividing_line "-"
+    title "[N]ew${TAB}[Del]ete${TAB}[M]ove(Cut)${TAB}[C]opy${TAB}[P]aste${TAB}[R]ename${TAB}[S]earch${TAB}pr[o]perties${TAB}re[F]resh${TAB}[Q]uit"
     echo -e "Current directory: $yellow$(pwd)$normal"
 
     # 处理文件列表
@@ -780,8 +790,8 @@ __main_menu__() {
     # TODO 快速搜索功能实现
     if [ $refresh = true ]; then
         refresh_time=$(date +%s.%N)
-        echo "loading..."
-        echo -en "\033[1A" # 将光标向上移动n行
+        echo -e "${RED}${black}loading...$NORMAL$normal"
+        echo -en "\033[1A" # 将光标向上移动 1 行
         log_debug "refreshed"
         shopt -s nullglob # 设置nullglob选项，使没有匹配时返回空数组
         # TODO 增加隐藏功能开关
@@ -791,6 +801,7 @@ __main_menu__() {
         shopt -u dotglob  # 恢复默认的glob模式
 
         # 排序
+        local sort_start_time=$(date +%s.%N)
         local sort_mode="${sort_options[$sort_setting]}"
         # TODO 其余排序方式
         if [ "$sort_mode" = "name" ]; then
@@ -838,25 +849,40 @@ __main_menu__() {
             )
             files=("${sorted_files[@]}")
         fi
+        log_debug "Sorting time consuming: $(echo "$(date +%s.%N) - $sort_start_time" | bc | awk '{printf "%.2f", $1}')s"
 
-        # TODO 翻页功能
         files_form=() # 用于存储每行应该显示的内容
 
+        file_list_page_max=$(( (${#files[@]} + file_list_line - 1) / file_list_line - 1 ))
+        if ((file_list_page > file_list_page_max)); then
+            file_list_page=$file_list_page_max
+        fi
         local i=0
+        local j=0
         for file in "${files[@]}"; do
-            # 获取文件的修改日期
+            if ((i < file_list_page * file_list_line)); then  # 跳过前几页
+                ((i++))
+                continue
+            elif ((i >= (file_list_page + 1) * file_list_line)); then  # 超过当前页时终止
+                break
+            fi
+            
+            # 处理当前页文件（文件索引在 [page*max, (page+1)*max) 区间）
             local mtime="$(show_prop mt "$file")"
-            # 获取文件的类型和大小
             local file_type=$(show_prop type "$file")
             local file_size=$(show_prop size "$file")
-            files_form[i]=$(printf "%-30.29s %-30.29s %-30.29s %+15.29s" "$file" "$mtime" "$file_type" "$file_size")
+            files_form[j]=$(printf "%-30.29s %-30.29s %-30.29s %+15.29s" "$file" "$mtime" "$file_type" "$file_size")
+            ((j++))
             ((i++))
         done
-
         # 可以被选中的内容
-        funcs=("Fast Search: $fast_search_name" "$(show_sort_by)" ".." "${files_form[@]}")
+        funcs=("Fast Search: $fast_search_name" "$(show_sort_by)" ".." "${files_form[@]}" "$(centering "< Page $((file_list_page + 1)) / $((file_list_page_max + 1)) >")")
 
         refresh=false
+    fi
+
+    if [ "$refresh_cho" = true ]; then
+        cho=$(( ${#funcs[@]} - 1 ))
     fi
 
     # 显示页面
@@ -1069,7 +1095,6 @@ rename_menu() {
     refresh=true
 }
 
-
 show_sort_by() {
     echo -n "Sort by(reverse:$sort_r):$TAB"
     local i=0
@@ -1111,29 +1136,29 @@ log_time() {
     date "+[%Y-%m-%d %H:%M:%S]"
 }
 log() {
-    echo "$(log_time) $1" >>/tmp/ubuntu-cd.log
+    echo "$(log_time) $1" >>"$log_path"
     log_show
 }
 log_warn() {
-    echo "$(log_time) ${YELLOW}${black}[WARNING]$NORMAL $1" >>/tmp/ubuntu-cd.log
+    echo "$(log_time) ${YELLOW}${black}[WARNING]$NORMAL $1" >>"$log_path"
     log_show
 }
 log_err() {
-    echo "$(log_time) ${RED}[ERROR]$NORMAL $1" >>/tmp/ubuntu-cd.log
+    echo "$(log_time) ${RED}[ERROR]$NORMAL $1" >>"$log_path"
     log_show
 }
 log_debug() {
     if [ $debug = true ]; then
-        echo "$(log_time) ${BLUE}[DEBUG]$NORMAL $1" >>/tmp/ubuntu-cd.log
+        echo "$(log_time) ${BLUE}[DEBUG]$NORMAL $1" >>"$log_path"
         log_show
     fi
 }
 log_clr() {
-    echo "Start Logging >>>" >/tmp/ubuntu-cd.log
+    echo "Start Logging >>>" >"$log_path"
     log_show
 }
 log_show() {
-    log_info="$(dividing_line "-")\n$(tail -n $log_info_line /tmp/ubuntu-cd.log)"
+    log_info="$(dividing_line "-")\n$(tail -n $log_info_line "$log_path")"
 }
 
 confirm_clr() {
@@ -1162,19 +1187,23 @@ TAB="    "
 sort_options=("name" "size" "modified date") # 排序选项
 new_type_options=("file" "dirctory")         # 新建类型
 
-funcs=()           # 存储可选行
-isexit=false       # 是否退出
-refresh=true       # 是否刷新
-debug=false        # 调试模式
-cho=0              # 当前选择行
-page="main"        # 当前页面
-sort_setting=0     # 排序选项
-sort_r=false       # 是否倒序排序
-new_type_setting=0 # 新建类型选项
-refresh_time=0     # 刷新时间
-log_info_line=5    # 日志信息行数
-file_list_line=10  # 文件列表行数
-file_list_page=0   # 
+funcs=()             # 存储可选行
+isexit=false         # 是否退出
+refresh=true         # 是否刷新
+debug=false          # 调试模式
+cho=0                # 当前选择行
+page="main"          # 当前页面
+sort_setting=0       # 排序选项
+sort_r=false         # 是否倒序排序
+new_type_setting=0   # 新建类型选项
+refresh_time=0       # 刷新时间
+log_info_line=5      # 日志信息行数
+file_list_line=20    # 文件列表行数
+file_list_page=0     # 文件列表页数
+file_list_page_max=0 # 文件列表页数最大值
+
+errfile_path="/tmp/ubuntu-cd.err" # 错误日志路径
+log_path="/tmp/ubuntu-cd.log"     # 日志路径
 
 # 由于对命令参数知识较为匮乏，目前只包含部分参数
 mv_b=false
@@ -1204,18 +1233,26 @@ for arg in "$@"; do
     case $arg in
     --debug)
         debug=true
+        log_debug "Debug mode is on"
+        ;;
+    --pwd=*)
+        start_dir="${arg#*=}" # 提取等号后的路径部分
+        if [ ! -d "$start_dir" ]; then
+            echo "Invalid directory: $start_dir"
+            exit 1
+        fi
+        cd "$start_dir" || exit 1
         ;;
     *)
-        echo "[$0] Unknown argument: $arg"
-        echo "Usage:  [--debug]"
+        echo "Unknown argument: $arg"
+        echo "Usage:  [--debug] [--pwd=<path>]"
+        echo "        --debug         Enable debug mode"
+        echo "        --pwd=<path>    Start in the specified directory"
         exit 1
         ;;
     esac
 done
 
 log_clr
-if [ $debug = true ]; then
-    log_debug "Debug mode is on"
-fi
 
 main_menu
