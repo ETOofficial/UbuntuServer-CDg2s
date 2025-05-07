@@ -1407,11 +1407,21 @@ for arg in "$@"; do
         fi
         cd "$start_dir" || exit 1
         ;;
+    --help)
+        echo ""
+        echo "Usage:"
+        echo "    ubuntu-cd [options]"
+        echo ""
+        echo "Options:"
+        echo "    --debug         Enable debug mode"
+        echo "    --pwd=<path>    Start in the specified directory"
+        echo "    --help          Show this help message"
+        echo ""
+        exit 0
+        ;;
     *)
-        echo "Unknown argument: $arg"
-        echo "Usage:  [--debug] [--pwd=<path>]"
-        echo "        --debug         Enable debug mode"
-        echo "        --pwd=<path>    Start in the specified directory"
+        echo "ubuntu-cd: Unknown argument: $arg"
+        echo "Try 'ubuntu-cd --help' for more information."
         exit 1
         ;;
     esac
