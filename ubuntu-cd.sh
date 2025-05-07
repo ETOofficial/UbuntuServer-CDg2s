@@ -127,13 +127,13 @@ trim_with_color() {
     local stripped_len=${#stripped}
 
     # 如果无需裁剪，直接返回原字符串
-    if (( stripped_len <= max_len )); then
+    if ((stripped_len <= max_len)); then
         echo -e "$str"
         return
     fi
 
-    local max_allowed=$((max_len - 3))  # 允许的纯文本长度（不含...）
-    local parts=()                      # 存储分解后的颜色代码和文本块
+    local max_allowed=$((max_len - 3)) # 允许的纯文本长度（不含...）
+    local parts=()                     # 存储分解后的颜色代码和文本块
     local temp_str="$str"
 
     # 分解字符串为颜色代码和普通文本块
@@ -145,7 +145,7 @@ trim_with_color() {
             parts+=("${BASH_REMATCH[1]}")
             temp_str="${temp_str:${#BASH_REMATCH[1]}}"
         else
-            break  # 处理剩余无效字符
+            break # 处理剩余无效字符
         fi
     done
 
@@ -160,52 +160,175 @@ trim_with_color() {
             result+="$part"
         else
             # 普通文本处理
-            if (( current_len >= max_allowed )); then
+            if ((current_len >= max_allowed)); then
                 continue
             fi
-            local remaining=$(( max_allowed - current_len ))
-            if (( ${#part} > remaining )); then
+            local remaining=$((max_allowed - current_len))
+            if ((${#part} > remaining)); then
                 result+="${part:0:remaining}"
                 result+="..."
-                current_len=$(( max_allowed + 3 ))
+                current_len=$((max_allowed + 3))
                 truncated=true
                 break
             else
                 result+="$part"
-                current_len=$(( current_len + ${#part} ))
+                current_len=$((current_len + ${#part}))
             fi
         fi
     done
 
     echo -e "$result"
 }
-
 # 初版
-# trim_with_color() {
-#     local str="$1"
-#     local max_len="$2"
-#     local stripped=$(echo -e "$str" | sed -r 's/\x1B\[[0-9;]*[mGK]//g')  # 去除颜色代码
-#     local stripped_len=${#stripped}
+trim_with_color.disabled() {
+    local str="$1"
+    local max_len="$2"
+    local stripped=$(echo -e "$str" | sed -r 's/\x1B\[[0-9;]*[mGK]//g') # 去除颜色代码
+    local stripped_len=${#stripped}
 
-#     # 如果纯文本未超长，直接返回原字符串
-#     if (( stripped_len <= max_len )); then
-#         echo -e "$str"
-#         return
-#     fi
+    # 如果纯文本未超长，直接返回原字符串
+    if ((stripped_len <= max_len)); then
+        echo -e "$str"
+        return
+    fi
 
-#     # 超长时，裁剪纯文本部分（注意保留颜色代码）
-#     local trimmed=${stripped:0:$((max_len - 3))}"..."
-    
-#     # 重新添加颜色代码（假设颜色代码在开头）
-#     # 注意：此处简化处理，假设颜色代码仅在开头。若需复杂场景（如中间有颜色变化），需更复杂的解析。
-#     local color_code=""
-#     if [[ "$str" =~ ^(.*\x1B\[[0-9;]*m) ]]; then
-#         color_code="${BASH_REMATCH[1]}"
-#     fi
+    # 超长时，裁剪纯文本部分（注意保留颜色代码）
+    local trimmed=${stripped:0:$((max_len - 3))}"..."
 
-#     echo -e "${color_code}${trimmed}$normal"  # 添加颜色代码和重置
-# }
+    # 重新添加颜色代码（假设颜色代码在开头）
+    # 注意：此处简化处理，假设颜色代码仅在开头。若需复杂场景（如中间有颜色变化），需更复杂的解析。
+    local color_code=""
+    if [[ "$str" =~ ^(.*\x1B\[[0-9;]*m) ]]; then
+        color_code="${BASH_REMATCH[1]}"
+    fi
 
+    echo -e "${color_code}${trimmed}$normal" # 添加颜色代码和重置
+}
+
+# 用法：
+#     
+search() {
+    local OPTIND # 确保选项解析正确，尤其在多次调用函数时
+
+    # 解析选项
+    while getopts "rvhptn:d:C:c:M:m:A:a:S:s:N:" opt; do
+        case $opt in
+        r) srecursive=true ;;  # 启用递归
+        n) slevel="$OPTARG" ;; 
+        d) sdir="$OPTARG" ;;  # sdir 末尾必须是 /
+        v) sverbose=true ;;    # 启用详细模式
+        h) shiden=true ;; # 启用搜索隐藏文件
+        C)
+            sctime_max="$OPTARG"
+            sctime=true
+            ;;
+        c)
+            sctime_min="$OPTARG"
+            sctime=true
+            ;;
+        M)
+            smtime_max="$OPTARG"
+            smtime=true
+            ;;
+        m)
+            smtime_min="$OPTARG"
+            smtime=true
+            ;;
+        A)
+            satime_max="$OPTARG"
+            satime=true
+            ;;
+        a)
+            satime_min="$OPTARG"
+            satime=true
+            ;;
+        S)
+            ssize_max="$OPTARG"
+            ssize=true
+            ;;
+        s)
+            ssize_min="$OPTARG"
+            ssize=true
+            ;;
+        p) saccurate=true ;;
+        t)
+            case "$OPTARG" in
+            all | file | directory) stype="$OPTARG" ;;
+            *) return 1 ;; # 无效选项时退出
+            esac
+            ;;
+        N) sname="$OPTARG" ;;
+        *) return 1 ;; # 无效选项时退出
+        esac
+    done
+    shift $((OPTIND - 1)) # 移除已处理的选项，保留其他参数
+
+    # if ((slevel == 0)); then
+    #     return
+    # fi
+
+    # 确保目录路径以 / 结尾
+    [[ "${sdir}" != */ ]] && sdir="${sdir}/"
+
+    # # 示例输出解析结果
+    # log_debug "$srecursive"
+
+    # 处理文件匹配逻辑
+    if [ "$shiden" = true ]; then
+        shopt -s dotglob
+    fi
+
+    files=("$sdir"*)
+    shopt -u dotglob  # 恢复原设置
+
+    for file in "${files[@]}"; do
+        # 处理当前文件的条件判断
+        local eligible=true
+        # 修复名称匹配逻辑
+        if [ "$saccurate" = false ]; then
+            [[ "$(basename "$file")" != *"$sname"* ]] && eligible=false
+        else
+            [[ ! "$(basename "$file")" =~ $sname ]] && eligible=false
+        fi
+
+        # 其他条件检查（如时间、大小等）需保留
+
+        if [ "$eligible" = true ]; then
+            search_result+=("$file")
+        fi
+
+        # 处理递归
+        if [ -d "$file" ] && [ "$srecursive" = true ]; then
+            if ((slevel > 1 || slevel == -1)); then
+                ((slevel != -1)) && ((slevel--))
+                search "$@" -d "$file/"
+                ((slevel != -1)) && ((slevel++))
+            fi
+        fi
+    done
+}
+
+# 整合搜索参数
+search_optind() {
+    local args=()
+    [ $srecursive = true ] && args+=(-r)
+    [ $sverbose = true ] && args+=(-v)
+    [ $shiden = true ] && args+=(-h)
+    [ $saccurate = true ] && args+=(-p)
+    ((slevel >= 0)) && args+=(-n "$slevel")
+    ((sctime_min != 0)) && args+=(-c "$sctime_min")
+    ((sctime_max != 0)) && args+=(-C "$sctime_max")
+    ((smtime_min != 0)) && args+=(-m "$smtime_min")
+    ((smtime_max != 0)) && args+=(-M "$smtime_max")
+    ((satime_min != 0)) && args+=(-a "$satime_min")
+    ((satime_max != 0)) && args+=(-A "$satime_max")
+    ((ssize_min != 0)) && args+=(-s "$ssize_min")
+    ((ssize_max != 0)) && args+=(-S "$ssize_max")
+    args+=(-d "$sdir")  # 确保路径用引号包裹，处理空格
+    args+=(-N "$sname")
+
+    echo "${args[@]}"
+}
 
 # 处理类 ####################################################################################################
 
@@ -378,10 +501,10 @@ cho_move() {
                             ;;
 
                         *)
-                            if ((cho != ${#funcs[@]} - 1)); then
+                            if ((cho <= ${#funcs[@]} - 2)); then
                                 local file_name="${files[(($cho - 3))]}"
                                 local file_type="$(file -b "$file_name")"
-                                if [ "$file_type" = "directory" ]; then
+                                if [ "$file_type" = "directory" ] || [[ "$file_type" == *"symbolic link"* ]] && [ -d "$file_name" ] ; then
                                     cd "$file_name" 2>"$errfile_path" || {
                                         local errmsg=$(cat "$errfile_path")
                                         log_err "$(handle_error "$file_name" "$errmsg")"
@@ -544,6 +667,13 @@ cho_move() {
                         confirm_clr
                         rename_target_file="${files[(($cho - 3))]}"
                         rename_menu
+                        break
+                        ;;
+                    "s")
+                        # 搜索
+                        confirm_clr
+                        search_menu
+                        break
                         ;;
                     *)
                         if [ $debug = true ]; then
@@ -893,6 +1023,7 @@ refresh_cooling() {
 # 菜单类 ####################################################################################################
 
 # 主菜单
+# TODO 选择处于文件列表时，左右键切换右边的属性显示
 __main_menu__() {
     if ((cho == ${#funcs[@]} - 1)); then
         local refresh_cho=true
@@ -973,20 +1104,20 @@ __main_menu__() {
 
         files_form=() # 用于存储每行应该显示的内容
 
-        file_list_page_max=$(( (${#files[@]} + file_list_line - 1) / file_list_line - 1 ))
+        file_list_page_max=$(((${#files[@]} + file_list_line - 1) / file_list_line - 1))
         if ((file_list_page > file_list_page_max)); then
             file_list_page=$file_list_page_max
         fi
         local i=0
         local j=0
         for file in "${files[@]}"; do
-            if ((i < file_list_page * file_list_line)); then  # 跳过前几页
+            if ((i < file_list_page * file_list_line)); then # 跳过前几页
                 ((i++))
                 continue
-            elif ((i >= (file_list_page + 1) * file_list_line)); then  # 超过当前页时终止
+            elif ((i >= (file_list_page + 1) * file_list_line)); then # 超过当前页时终止
                 break
             fi
-            
+
             # 处理当前页文件（文件索引在 [page*max, (page+1)*max) 区间）
             local file_type=$(show_prop type "$file")
             if [ "$file_type" = "directory" ]; then
@@ -994,7 +1125,7 @@ __main_menu__() {
                 local file_size=$blue"/"$normal
                 file_type=$blue$file_type$normal
             elif [ "$file_type" = "symbolic link" ]; then
-                local link_target=$(readlink your_symlink)
+                local link_target=$(readlink $file)
                 if [ -d "$link_target" ]; then
                     local file_name=$blue$file"@/"$normal
                     local file_size=$blue"@/"$normal
@@ -1009,23 +1140,23 @@ __main_menu__() {
             local mtime="$(show_prop mt "$file")"
 
             # 对每个字段裁剪并格式化
-            file_name=$(trim_with_color "$file_name" 29)  # 29字符（留1位给填充）
+            file_name=$(trim_with_color "$file_name" 29) # 29字符（留1位给填充）
             mtime=$(trim_with_color "$mtime" 29)
             file_type=$(trim_with_color "$file_type" 29)
-            file_size=$(trim_with_color "$file_size" 14)  # %+15.29s → 14字符（留1位给符号）
+            file_size=$(trim_with_color "$file_size" 14) # %+15.29s → 14字符（留1位给符号）
 
             # 对每个变量计算动态宽度
             local file_name_width=$(get_format_width "$file_name" 30)
-            local mtime_width=$(get_format_width "$mtime" 30)
+            local smtime_width=$(get_format_width "$mtime" 30)
             local file_type_width=$(get_format_width "$file_type" 30)
             local file_size_width=$(get_format_width "$file_size" 10)
 
             # files_form[j]=$(printf "%-30.29s %-30.29s %-30.29s %+15.29s" "$file_name" "$mtime" "$file_type" "$file_size")
-            
+
             # 使用动态宽度格式化输出
             files_form[j]=$(printf "%-*s %-*s %-*s %+*s" \
                 "$file_name_width" "$file_name" \
-                "$mtime_width" "$mtime" \
+                "$smtime_width" "$mtime" \
                 "$file_type_width" "$file_type" \
                 "$file_size_width" "$file_size")
 
@@ -1039,11 +1170,11 @@ __main_menu__() {
     fi
 
     if [ "$refresh_cho" = true ]; then
-        cho=$(( ${#funcs[@]} - 1 ))
+        cho=$((${#funcs[@]} - 1))
     fi
 
     if ((cho > ${#funcs[@]} - 1)); then
-        cho=$(( ${#funcs[@]} - 1 ))
+        cho=$((${#funcs[@]} - 1))
     fi
 
     # 显示页面
@@ -1070,6 +1201,7 @@ __main_menu__() {
 }
 
 # 新建菜单
+# TODO 链接文件
 __new_menu__() {
     # 显示页眉
     title "New"
@@ -1188,6 +1320,26 @@ __rename_menu__() {
     echo -e "$log_info"
 }
 
+# 搜索菜单
+__search_menu__() {
+    # 显示页眉
+
+    # 显示页面
+    # 测试
+    sname="*very*"
+    sdir="$(pwd)"
+    sverbose=true
+    saccurate=true
+    echo $(search_optind)
+    echo ""
+    search $(search_optind)
+    echo "${search_result[*]}"
+
+    # 显示页尾
+    echo -e "$NORMAL"
+    echo -e "$log_info"
+}
+
 # 之后的 menu 函数用于直接调用
 main_menu() {
     # log_clr
@@ -1257,7 +1409,23 @@ rename_menu() {
     refresh=true
 }
 
+search_menu() { 
+    funcs=()
+    confirm_clr
+    page="search"
+    cho=0
 
+    while [ "$isexit" = false ]; do
+        clear
+        __search_menu__
+        cho_move
+    done
+
+    isexit=false
+    page="main"
+    cho=0
+    refresh=true
+}
 
 # 其余显示函数
 show_sort_by() {
@@ -1365,9 +1533,33 @@ log_info_line=5      # 日志信息行数
 file_list_line=20    # 文件列表行数
 file_list_page=0     # 文件列表页数
 file_list_page_max=0 # 文件列表页数最大值
+search_result=()     # 搜索结果
+
+# 搜索选项
+srecursive=false
+sverbose=false
+shiden=false # 是否搜索隐藏文件
+sctime=false
+smtime=false
+satime=false
+ssize=false
+stype=all
+sname=""
+saccurate=false # 是否精确匹配，参数为 -p
+sdir="*"
+slevel=0 # 递归层数
+sctime_min=0
+sctime_max=0
+smtime_min=0
+smtime_max=0
+satime_min=0
+satime_max=0
+ssize_min=0
+ssize_max=0
 
 errfile_path="/tmp/ubuntu-cd.err" # 错误日志路径
 log_path="/tmp/ubuntu-cd.log"     # 日志路径
+loading_percent_file="/tmp/ubuntu-cd-loading-percent.tmp"
 
 # 由于对命令参数知识较为匮乏，目前只包含部分参数
 mv_b=false
