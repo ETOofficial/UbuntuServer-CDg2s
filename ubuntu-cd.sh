@@ -209,6 +209,11 @@ trim_with_color() {
 
 # 处理类 ####################################################################################################
 
+# 定义清理函数
+cleanup() {
+    eval "$SHOPT_DOTGLOB" # 恢复原始状态
+}
+
 handle_error() {
     local file_name=$1
     local errmsg=$2
@@ -1411,6 +1416,10 @@ for arg in "$@"; do
         ;;
     esac
 done
+
+# 保存原始状态
+SHOPT_DOTGLOB=$(shopt -p dotglob)
+trap cleanup EXIT
 
 log_clr
 
