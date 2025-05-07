@@ -99,6 +99,21 @@ not() {
     fi
 }
 
+# 计算动态宽度
+get_format_width() {
+    local content="$1"
+    local desired_width="$2"
+    local plain=$(strip_color "$content")
+    local plain_length=${#plain}
+    local color_length=${#content}
+    echo $((desired_width + color_length - plain_length))
+}
+
+# 去除颜色代码的函数
+strip_color() {
+    echo -e "$1" | sed -r 's/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g'
+}
+
 # 处理类 ####################################################################################################
 
 handle_error() {
@@ -233,7 +248,6 @@ cho_move() {
                     $'\x00')
                         # 回车
                         confirm_clr
-                        # TODO 添加换页功能以应对过多的文件
                         # 注意：不可删除空处理，因为默认是选择的文件或目录
                         case $cho in
 
@@ -252,7 +266,6 @@ cho_move() {
                         # 上级目录所在行数，如果行数有变，需要更改此处
                         2)
                             cd ..
-                            cho=0
                             refresh=true
                             # log_clr
                             ;;
@@ -868,10 +881,30 @@ __main_menu__() {
             fi
             
             # 处理当前页文件（文件索引在 [page*max, (page+1)*max) 区间）
-            local mtime="$(show_prop mt "$file")"
             local file_type=$(show_prop type "$file")
+            if [ "$file_type" = "directory" ]; then
+                local file_name=$blue$file"/"$normal
+                file_type=$blue$file_type$normal
+            else
+                local file_name=$file
+            fi
+            local mtime="$(show_prop mt "$file")"
             local file_size=$(show_prop size "$file")
-            files_form[j]=$(printf "%-30.29s %-30.29s %-30.29s %+15.29s" "$file" "$mtime" "$file_type" "$file_size")
+
+            # 对每个变量计算动态宽度
+            local file_name_width=$(get_format_width "$file_name" 30)
+            local mtime_width=$(get_format_width "$mtime" 30)
+            local file_type_width=$(get_format_width "$file_type" 30)
+            local file_size_width=$(get_format_width "$file_size" 15)  # 原格式为%+15.29s
+
+            # files_form[j]=$(printf "%-30.29s %-30.29s %-30.29s %+15.29s" "$file_name" "$mtime" "$file_type" "$file_size")
+            # 使用动态宽度格式化输出
+            files_form[j]=$(printf "%-*s %-*s %-*s %+*s" \
+                "$file_name_width" "$file_name" \
+                "$mtime_width" "$mtime" \
+                "$file_type_width" "$file_type" \
+                "$file_size_width" "$file_size")
+
             ((j++))
             ((i++))
         done
@@ -1131,7 +1164,6 @@ show_bool() {
 
 # 日志类 ####################################################################################################
 
-# TODO 将日志写入文件以支持显示更多内容
 log_time() {
     date "+[%Y-%m-%d %H:%M:%S]"
 }
