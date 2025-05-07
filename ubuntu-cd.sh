@@ -416,7 +416,7 @@ cho_move() {
                         ;;
                     "~")
                         # 删除（delete）
-                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
+                        if ((cho <= 2)) && ((cho >= ${#funcs[@]} - 1)); then
                             continue
                         fi
 
@@ -443,7 +443,7 @@ cho_move() {
                         ;;
                     "c")
                         # 复制
-                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
+                        if ((cho <= 2)) && ((cho >= ${#funcs[@]} - 1)); then
                             continue
                         fi
 
@@ -520,7 +520,7 @@ cho_move() {
                         ;;
                     "m")
                         # 移动（剪切）
-                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
+                        if ((cho <= 2)) && ((cho >= ${#funcs[@]} - 1)); then
                             continue
                         fi
 
@@ -533,7 +533,7 @@ cho_move() {
                         ;;
                     "r")
                         # 重命名
-                        if ((cho > 2)) && ((cho < ${#funcs[@]} - 1)); then
+                        if ((cho <= 2)) && ((cho >= ${#funcs[@]} - 1)); then
                             continue
                         fi
                         confirm_clr
