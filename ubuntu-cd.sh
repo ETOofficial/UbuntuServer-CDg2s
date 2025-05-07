@@ -114,6 +114,99 @@ strip_color() {
     echo -e "$1" | sed -r 's/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g'
 }
 
+# 裁剪文本并保留颜色代码的函数
+# 参数：$1=原始字符串, $2=最大长度（纯文本部分）
+# 第二版
+# FIXME 问题：含颜色代码的字符串截取后长度小于预期。颜色处理实际上也有问题，不过严重程度低
+trim_with_color() {
+    local str="$1"
+    local max_len="$2"
+
+    # 去除颜色代码后的纯文本及其长度
+    local stripped=$(echo -e "$str" | sed -r 's/\x1B\[[0-9;]*[mGK]//g')
+    local stripped_len=${#stripped}
+
+    # 如果无需裁剪，直接返回原字符串
+    if (( stripped_len <= max_len )); then
+        echo -e "$str"
+        return
+    fi
+
+    local max_allowed=$((max_len - 3))  # 允许的纯文本长度（不含...）
+    local parts=()                      # 存储分解后的颜色代码和文本块
+    local temp_str="$str"
+
+    # 分解字符串为颜色代码和普通文本块
+    while [[ -n "$temp_str" ]]; do
+        if [[ "$temp_str" =~ ^($'\x1B'\[[0-9;]*[mGK]) ]]; then
+            parts+=("${BASH_REMATCH[1]}")
+            temp_str="${temp_str:${#BASH_REMATCH[1]}}"
+        elif [[ "$temp_str" =~ ^([^$'\x1B']+) ]]; then
+            parts+=("${BASH_REMATCH[1]}")
+            temp_str="${temp_str:${#BASH_REMATCH[1]}}"
+        else
+            break  # 处理剩余无效字符
+        fi
+    done
+
+    local result=""
+    local current_len=0
+    local truncated=false
+
+    # 构建结果字符串
+    for part in "${parts[@]}"; do
+        if [[ "$part" =~ ^$'\x1B'\[ ]]; then
+            # 颜色代码直接添加
+            result+="$part"
+        else
+            # 普通文本处理
+            if (( current_len >= max_allowed )); then
+                continue
+            fi
+            local remaining=$(( max_allowed - current_len ))
+            if (( ${#part} > remaining )); then
+                result+="${part:0:remaining}"
+                result+="..."
+                current_len=$(( max_allowed + 3 ))
+                truncated=true
+                break
+            else
+                result+="$part"
+                current_len=$(( current_len + ${#part} ))
+            fi
+        fi
+    done
+
+    echo -e "$result"
+}
+
+# 初版
+# trim_with_color() {
+#     local str="$1"
+#     local max_len="$2"
+#     local stripped=$(echo -e "$str" | sed -r 's/\x1B\[[0-9;]*[mGK]//g')  # 去除颜色代码
+#     local stripped_len=${#stripped}
+
+#     # 如果纯文本未超长，直接返回原字符串
+#     if (( stripped_len <= max_len )); then
+#         echo -e "$str"
+#         return
+#     fi
+
+#     # 超长时，裁剪纯文本部分（注意保留颜色代码）
+#     local trimmed=${stripped:0:$((max_len - 3))}"..."
+    
+#     # 重新添加颜色代码（假设颜色代码在开头）
+#     # 注意：此处简化处理，假设颜色代码仅在开头。若需复杂场景（如中间有颜色变化），需更复杂的解析。
+#     local color_code=""
+#     if [[ "$str" =~ ^(.*\x1B\[[0-9;]*m) ]]; then
+#         color_code="${BASH_REMATCH[1]}"
+#     fi
+
+#     echo -e "${color_code}${trimmed}$normal"  # 添加颜色代码和重置
+# }
+
+
 # 处理类 ####################################################################################################
 
 handle_error() {
@@ -144,7 +237,12 @@ handle_error() {
 cho_move() {
     while true; do
         # 读取第一个字符（处理转义序列）
+
+        # # 恢复默认终端设置
+        # stty sane
+
         read -rsn1 key
+
         # 检测键盘
         # 注意：
         #   1.请检查每项处理是否拥有常驻处理项或相应的替代处理
@@ -158,6 +256,10 @@ cho_move() {
             # confirm_clr
             # 读取后续两个字符
             read -rsn2 -t 0.1 rest
+
+            # # 禁用输入缓冲
+            # stty -icanon min 1 time 0
+
             case "$rest" in
             # Up
             '[A' | '^[[A')
@@ -884,20 +986,37 @@ __main_menu__() {
             local file_type=$(show_prop type "$file")
             if [ "$file_type" = "directory" ]; then
                 local file_name=$blue$file"/"$normal
+                local file_size=$blue"/"$normal
                 file_type=$blue$file_type$normal
+            elif [ "$file_type" = "symbolic link" ]; then
+                local link_target=$(readlink your_symlink)
+                if [ -d "$link_target" ]; then
+                    local file_name=$blue$file"@/"$normal
+                    local file_size=$blue"@/"$normal
+                else
+                    local file_name=$blue$file"@"$normal
+                    local file_size=$blue"@"$normal
+                fi
             else
                 local file_name=$file
+                local file_size=$(show_prop size "$file")
             fi
             local mtime="$(show_prop mt "$file")"
-            local file_size=$(show_prop size "$file")
+
+            # 对每个字段裁剪并格式化
+            file_name=$(trim_with_color "$file_name" 29)  # 29字符（留1位给填充）
+            mtime=$(trim_with_color "$mtime" 29)
+            file_type=$(trim_with_color "$file_type" 29)
+            file_size=$(trim_with_color "$file_size" 14)  # %+15.29s → 14字符（留1位给符号）
 
             # 对每个变量计算动态宽度
             local file_name_width=$(get_format_width "$file_name" 30)
             local mtime_width=$(get_format_width "$mtime" 30)
             local file_type_width=$(get_format_width "$file_type" 30)
-            local file_size_width=$(get_format_width "$file_size" 15)  # 原格式为%+15.29s
+            local file_size_width=$(get_format_width "$file_size" 10)
 
             # files_form[j]=$(printf "%-30.29s %-30.29s %-30.29s %+15.29s" "$file_name" "$mtime" "$file_type" "$file_size")
+            
             # 使用动态宽度格式化输出
             files_form[j]=$(printf "%-*s %-*s %-*s %+*s" \
                 "$file_name_width" "$file_name" \
@@ -918,6 +1037,10 @@ __main_menu__() {
         cho=$(( ${#funcs[@]} - 1 ))
     fi
 
+    if ((cho > ${#funcs[@]} - 1)); then
+        cho=$(( ${#funcs[@]} - 1 ))
+    fi
+
     # 显示页面
     local i=0
     for func in "${funcs[@]}"; do
@@ -930,7 +1053,7 @@ __main_menu__() {
         if ((i == 1)); then
             echo -ne "$NORMAL"
             dividing_line "-"
-            printf "%-30s %-30s %-30s %+15s" "Name" "Modified Date" "Type" "Size"
+            printf "%-30s %-30s %-30s %+10s" "Name" "Modified Date" "Type" "Size"
             echo ""
         fi
         ((i++))
@@ -1037,6 +1160,7 @@ __paste_menu__() {
     echo -e "$log_info"
 }
 
+# 重命名菜单
 __rename_menu__() {
     # 显示页眉
     title "Rename"
@@ -1128,6 +1252,9 @@ rename_menu() {
     refresh=true
 }
 
+
+
+# 其余显示函数
 show_sort_by() {
     echo -n "Sort by(reverse:$sort_r):$TAB"
     local i=0
