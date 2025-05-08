@@ -19,21 +19,6 @@ format_file_size() {
     echo "$size"
 }
 
-# 显示文件属性
-show_prop() {
-    if [ "$1" = "mt" ] || [ "$1" = "mtime" ]; then
-        stat -c "%y" "$2" | cut -d '.' -f 1
-    elif [ "$1" = "ct" ] || [ "$1" = "ctime" ]; then
-        stat -c "%z" "$2" | cut -d '.' -f 1
-    elif [ "$1" = "at" ] || [ "$1" = "atime" ]; then
-        stat -c "%x" "$2" | cut -d '.' -f 1
-    elif [ "$1" = "size" ]; then
-        format_file_size "$(stat -c "%s" "$file")"
-    elif [ "$1" = "type" ]; then
-        stat -c "%F" "$2"
-    fi
-}
-
 pause() {
     read -rn 1 -p "$1"
 }
@@ -205,6 +190,13 @@ trim_with_color.disabled() {
     echo -e "${color_code}${trimmed}$normal" # 添加颜色代码和重置
 }
 
+# 处理类 ####################################################################################################
+
+# 定义清理函数
+cleanup() {
+    eval "$SHOPT_DOTGLOB" # 恢复原始状态
+}
+
 # 用法：
 #     
 search() {
@@ -263,35 +255,71 @@ search() {
     done
     shift $((OPTIND - 1)) # 移除已处理的选项，保留其他参数
 
-    # if ((slevel == 0)); then
-    #     return
-    # fi
-
     # 确保目录路径以 / 结尾
     [[ "${sdir}" != */ ]] && sdir="${sdir}/"
-
-    # # 示例输出解析结果
-    # log_debug "$srecursive"
 
     # 处理文件匹配逻辑
     if [ "$shiden" = true ]; then
         shopt -s dotglob
     fi
-
     files=("$sdir"*)
     shopt -u dotglob  # 恢复原设置
+
+    if [ ! -d "$sdir" ]; then
+        log_err "Directory not found: $sdir"
+        files=()
+    elif [ ! -r "$sdir" ]; then
+        log_err "Permission denied: $sdir"
+        files=()
+    else
+        files=("$sdir"*)
+    fi
 
     for file in "${files[@]}"; do
         # 处理当前文件的条件判断
         local eligible=true
-        # 修复名称匹配逻辑
-        if [ "$saccurate" = false ]; then
-            [[ "$(basename "$file")" != *"$sname"* ]] && eligible=false
+        # 名称匹配
+        if [ "$sname" != "" ] && [ "$saccurate" = false ]; then
+            [[ "$(basename "$file")" == *"$sname"* ]] || eligible=false
         else
-            [[ ! "$(basename "$file")" =~ $sname ]] && eligible=false
+            [[ "$(basename "$file")" =~ $sname ]] || eligible=false
         fi
-
-        # 其他条件检查（如时间、大小等）需保留
+        # 类型匹配
+        if [ $eligible = true ]; then
+            case "$stype" in
+            all)
+                :
+                ;;
+            file)
+                [ -f "$file" ] || eligible=false
+                ;;
+            directory)
+                [ -d "$file" ] || eligible=false
+                ;;
+            esac
+        fi
+        # 时间匹配
+        if [ $eligible = true ] && [ "$sctime" = true ]; then
+            local ctime=$(stat -c %Z "$file")
+            ((ctime >= sctime_min)) || eligible=false
+            ((ctime <= sctime_max)) || eligible=false
+        fi
+        if [ $eligible = true ] && [ "$satime" = true ]; then
+            local atime=$(stat -c %X "$file")
+            ((atime >= satime_min)) || eligible=false
+            ((atime <= satime_max)) || eligible=false
+        fi
+        if [ $eligible = true ] && [ "$smtime" = true ]; then
+            local mtime=$(stat -c %Y "$file")
+            ((mtime >= smtime_min)) || eligible=false
+            ((mtime <= smtime_max)) || eligible=false
+        fi
+        # 大小匹配
+        if [ $eligible = true ] && [ "$ssize" = true ]; then
+            local size=$(stat -c %s "$file")
+            ((size >= ssize_min)) || eligible=false
+            ((size <= ssize_max)) || eligible=false
+        fi
 
         if [ "$eligible" = true ]; then
             search_result+=("$file")
@@ -300,9 +328,10 @@ search() {
         # 处理递归
         if [ -d "$file" ] && [ "$srecursive" = true ]; then
             if ((slevel > 1 || slevel == -1)); then
-                ((slevel != -1)) && ((slevel--))
-                search "$@" -d "$file/"
-                ((slevel != -1)) && ((slevel++))
+                ((slevel == -1)) || ((slevel != -1)) && ((slevel--))
+                sdir="$file/"
+                search $(search_optind)
+                ((slevel == -1)) || ((slevel != -1)) && ((slevel++))
             fi
         fi
     done
@@ -325,16 +354,9 @@ search_optind() {
     ((ssize_min != 0)) && args+=(-s "$ssize_min")
     ((ssize_max != 0)) && args+=(-S "$ssize_max")
     args+=(-d "$sdir")  # 确保路径用引号包裹，处理空格
-    args+=(-N "$sname")
+    [ "$sname" != "" ] && args+=(-N "$sname")
 
     echo "${args[@]}"
-}
-
-# 处理类 ####################################################################################################
-
-# 定义清理函数
-cleanup() {
-    eval "$SHOPT_DOTGLOB" # 恢复原始状态
 }
 
 handle_error() {
@@ -1326,11 +1348,16 @@ __search_menu__() {
 
     # 显示页面
     # 测试
-    sname="*very*"
-    sdir="$(pwd)"
-    sverbose=true
+    sname='*e*'
     saccurate=true
-    echo $(search_optind)
+    sdir="$(pwd)"
+    shiden=true
+    # sctime=true
+    # sctime_min=1000000000
+    # sctime_max=1999999999
+    slevel=3
+    srecursive=true
+    echo "$(search_optind)"
     echo ""
     search $(search_optind)
     echo "${search_result[*]}"
@@ -1462,6 +1489,21 @@ show_bool() {
     fi
 }
 
+# 显示文件属性
+show_prop() {
+    if [ "$1" = "mt" ] || [ "$1" = "mtime" ]; then # 修改时间
+        stat -c "%y" "$2" | cut -d '.' -f 1
+    elif [ "$1" = "ct" ] || [ "$1" = "ctime" ]; then # 变化时间
+        stat -c "%z" "$2" | cut -d '.' -f 1
+    elif [ "$1" = "at" ] || [ "$1" = "atime" ]; then # 访问时间
+        stat -c "%x" "$2" | cut -d '.' -f 1
+    elif [ "$1" = "size" ]; then
+        format_file_size "$(stat -c "%s" "$file")"
+    elif [ "$1" = "type" ]; then
+        stat -c "%F" "$2"
+    fi
+}
+
 # 日志类 ####################################################################################################
 
 log_time() {
@@ -1585,6 +1627,8 @@ cp_u=false
 cp_v=false
 cp_x=false
 
+log_clr
+
 for arg in "$@"; do
     case $arg in
     --debug)
@@ -1622,7 +1666,5 @@ done
 # 保存原始状态
 SHOPT_DOTGLOB=$(shopt -p dotglob)
 trap cleanup EXIT
-
-log_clr
 
 main_menu
