@@ -1327,6 +1327,7 @@ __rename_menu__() {
 
     funcs=("Name: $rename_name" "Confirm" "Cancel")
 
+    # 显示页面
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
@@ -1545,7 +1546,7 @@ show_what_has_been_pressed() {
 
 # 初始化 ####################################################################################################
 
-# 颜色转义字符，小写为字体颜色，大写为文字颜色
+# 颜色转义字符，小写为字体颜色，大写为背景颜色
 NORMAL='\033[0m'
 normal='\033[37m'
 GREEN='\033[42m'
