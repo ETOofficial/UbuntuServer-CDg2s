@@ -198,18 +198,18 @@ cleanup() {
 }
 
 # 用法：
-#     
+#
 search() {
     local OPTIND # 确保选项解析正确，尤其在多次调用函数时
 
     # 解析选项
     while getopts "rvhptn:d:C:c:M:m:A:a:S:s:N:" opt; do
         case $opt in
-        r) srecursive=true ;;  # 启用递归
-        n) slevel="$OPTARG" ;; 
-        d) sdir="$OPTARG" ;;  # sdir 末尾必须是 /
-        v) sverbose=true ;;    # 启用详细模式
-        h) shiden=true ;; # 启用搜索隐藏文件
+        r) srecursive=true ;; # 启用递归
+        n) slevel="$OPTARG" ;;
+        d) sdir="$OPTARG" ;; # sdir 末尾必须是 /
+        v) sverbose=true ;;  # 启用详细模式
+        h) shiden=true ;;    # 启用搜索隐藏文件
         C)
             sctime_max="$OPTARG"
             sctime=true
@@ -263,7 +263,7 @@ search() {
         shopt -s dotglob
     fi
     files=("$sdir"*)
-    shopt -u dotglob  # 恢复原设置
+    shopt -u dotglob # 恢复原设置
 
     if [ ! -d "$sdir" ]; then
         log_err "Directory not found: $sdir"
@@ -353,7 +353,7 @@ search_optind() {
     ((satime_max != 0)) && args+=(-A "$satime_max")
     ((ssize_min != 0)) && args+=(-s "$ssize_min")
     ((ssize_max != 0)) && args+=(-S "$ssize_max")
-    args+=(-d "$sdir")  # 确保路径用引号包裹，处理空格
+    args+=(-d "$sdir") # 确保路径用引号包裹，处理空格
     [ "$sname" != "" ] && args+=(-N "$sname")
 
     echo "${args[@]}"
@@ -413,16 +413,44 @@ cho_move() {
             case "$rest" in
             # Up
             '[A' | '^[[A')
-                confirm_clr
-                ((cho--))
+                case "$page" in
+                "search")
+                    confirm_clr
+                    case "$cho" in
+                    4) [ $ssize = false ] && ((cho -= 3)) || ((cho--)) ;;
+                    7) [ $satime = false ] && ((cho -= 3)) || ((cho--)) ;;
+                    10) [ $sctime = false ] && ((cho -= 3)) || ((cho--)) ;;
+                    13) [ $smtime = false ] && ((cho -= 3)) || ((cho--)) ;;
+                    *) ((cho--)) ;;
+                    esac
+                    ;;
+                *)
+                    confirm_clr
+                    ((cho--))
+                    ;;
+                esac
                 if ((cho == -1)); then
                     cho=$((${#funcs[@]} - 1))
                 fi
                 ;;
             # Down
             '[B' | '^[[B')
-                confirm_clr
-                ((cho++))
+                case "$page" in
+                "search")
+                    confirm_clr
+                    case "$cho" in
+                    1) [ $ssize = false ] && ((cho += 3)) || ((cho++)) ;;
+                    4) [ $satime = false ] && ((cho += 3)) || ((cho++)) ;;
+                    7) [ $sctime = false ] && ((cho += 3)) || ((cho++)) ;;
+                    10) [ $smtime = false ] && ((cho += 3)) || ((cho++)) ;;
+                    *) ((cho++)) ;;
+                    esac
+                    ;;
+                *)
+                    confirm_clr
+                    ((cho++))
+                    ;;
+                esac
                 if ((cho == ${#funcs[@]})); then
                     cho=0
                 fi
@@ -430,7 +458,8 @@ cho_move() {
             # Right
             '[C' | '^[[C')
                 confirm_clr
-                if [ "$page" = "main" ]; then
+                case "$page" in
+                "main")
                     if ((cho == 1)); then
                         ((sort_setting++))
                         if ((sort_setting == ${#sort_options[@]})); then
@@ -441,19 +470,38 @@ cho_move() {
                         ((file_list_page++))
                         refresh=true
                     fi
-                elif [ "$page" = "new" ]; then
+                    ;;
+                "new")
                     if ((cho == 0)); then
                         ((new_type_setting++))
                         if ((new_type_setting == ${#new_type_options[@]})); then
                             new_type_setting=0
                         fi
                     fi
-                fi
+                    ;;
+                "search")
+                    case "$cho" in
+                    5 | 6 | 8 | 9 | 11 | 12)
+                        ((cho_colu++))
+                        if ((cho_colu == 6)); then
+                            cho_colu=0
+                        fi
+                        ;;
+                    17)
+                        ((search_type_setting++))
+                        if ((search_type_setting == ${#search_type_options[@]})); then
+                            search_type_setting=0
+                        fi
+                        ;;
+                    esac
+                    ;;
+                esac
                 ;;
             # Left
             '[D' | '^[[D')
                 confirm_clr
-                if [ "$page" = "main" ]; then
+                case "$page" in
+                "main")
                     if ((cho == 1)); then
                         ((sort_setting--))
                         if ((sort_setting == -1)); then
@@ -464,14 +512,32 @@ cho_move() {
                         ((file_list_page--))
                         refresh=true
                     fi
-                elif [ "$page" = "new" ]; then
+                    ;;
+                "new")
                     if ((cho == 0)); then
                         ((new_type_setting--))
                         if ((new_type_setting == -1)); then
                             new_type_setting=$((${#new_type_options[@]} - 1))
                         fi
                     fi
-                fi
+                    ;;
+                "search")
+                    case "$cho" in
+                    5 | 6 | 8 | 9 | 11 | 12)
+                        ((cho_colu++))
+                        if ((cho_colu == 6)); then
+                            cho_colu=0
+                        fi
+                        ;;
+                    17)
+                        ((search_type_setting--))
+                        if ((search_type_setting == -1)); then
+                            search_type_setting=$((${#search_type_options[@]} - 1))
+                        fi
+                        ;;
+                    esac
+                    ;;
+                esac
                 ;;
             esac
             break
@@ -526,7 +592,7 @@ cho_move() {
                             if ((cho <= ${#funcs[@]} - 2)); then
                                 local file_name="${files[(($cho - 3))]}"
                                 local file_type="$(file -b "$file_name")"
-                                if [ "$file_type" = "directory" ] || [[ "$file_type" == *"symbolic link"* ]] && [ -d "$file_name" ] ; then
+                                if [ "$file_type" = "directory" ] || [[ "$file_type" == *"symbolic link"* ]] && [ -d "$file_name" ]; then
                                     cd "$file_name" 2>"$errfile_path" || {
                                         local errmsg=$(cat "$errfile_path")
                                         log_err "$(handle_error "$file_name" "$errmsg")"
@@ -1026,6 +1092,83 @@ cho_move() {
                     esac
                 fi
                 ;;
+            "search")
+                if ((cho == 0)); then # 名称输入行
+                    confirm_clr
+                    if [ "$key" = $'\x7f' ]; then
+                        rename_name="${rename_name%?}"
+                    elif [ "$key" = $'\x00' ]; then
+                        ((cho++))
+                    elif (($(printf '%s' "$rename_name" | wc -c) >= 255)); then
+                        log_err "name too long"
+                    else
+                        rename_name+="$key"
+                    fi
+                    break
+                elif ((cho == 14)); then # 递归层数输入行
+                    confirm_clr
+                    if [ "$key" = $'\x7f' ]; then
+                        if [ "$slevel" = -1 ] || [ ${#slevel} = 1 ]; then
+                            slevel=0
+                        else
+                            slevel="${slevel%?}"
+                        fi
+                    elif [ "$key" = $'\x00' ]; then
+                        ((cho++))
+                    elif [ "$slevel" = -1 ]; then
+                        :
+                    elif [ "$slevel" != 0 ] && [[ "$key" == [0-9] ]]; then
+                        slevel+="$key"
+                    elif [ "$slevel" = 0 ] && [ "$key" = "-" ]; then
+                        slevel=-1
+                    elif [ "$slevel" = 0 ] && [[ "$key" == [1-9] ]]; then
+                        slevel="$key"
+                    fi
+                    break
+                else
+                    case "$key" in
+                    $'\x00')
+                        # 回车
+                        confirm_clr
+                        if ((cho == ${#funcs[@]} - 1)); then # 取消
+                            isexit=true
+                            break
+                        elif ((cho == ${#funcs[@]} - 2)); then # 确认
+                            :
+                        elif ((cho == 1)); then
+                            ssize=$(not $ssize)
+                            break
+                        elif ((cho == 4)); then
+                            satime=$(not $satime)
+                            break
+                        elif ((cho == 7)); then
+                            sctime=$(not $sctime)
+                            break
+                        elif ((cho == 10)); then
+                            smtime=$(not $smtime)
+                            break
+                        elif ((cho == 13)); then
+                            saccurate=$(not $saccurate)
+                            break
+                        elif ((cho == 14)); then
+                            srecursive=$(not $srecursive)
+                            break
+                        elif ((cho == 15)); then
+                            shiden=$(not $shiden)
+                            break
+                        elif ((cho == 16)); then
+                            sverbose=$(not $sverbose)
+                            break
+                        fi
+                        ;;
+                    *)
+                        confirm_clr
+                        show_what_has_been_pressed
+                        break
+                        ;;
+                    esac
+                fi
+                ;;
             esac
         fi
     done
@@ -1203,7 +1346,7 @@ __main_menu__() {
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
-            echo -e "$GREEN$(pad "$func")"
+            echo -e "$CHO_COLOR$(pad "$func")"
         else
             echo -e "$NORMAL$func"
         fi
@@ -1235,7 +1378,7 @@ __new_menu__() {
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
-            echo -e "$GREEN$(pad "$func")"
+            echo -e "$CHO_COLOR$(pad "$func")"
         else
             echo -e "$NORMAL$func"
         fi
@@ -1303,7 +1446,7 @@ __paste_menu__() {
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
-            echo -e "$GREEN$(pad "$func")"
+            echo -e "$CHO_COLOR$(pad "$func")"
         else
             echo -e "$NORMAL$func"
         fi
@@ -1331,7 +1474,7 @@ __rename_menu__() {
     local i=0
     for func in "${funcs[@]}"; do
         if ((cho == i)); then
-            echo -e "$GREEN$(pad "$func")"
+            echo -e "$CHO_COLOR$(pad "$func")"
         else
             echo -e "$NORMAL$func"
         fi
@@ -1346,22 +1489,56 @@ __rename_menu__() {
 # 搜索菜单
 __search_menu__() {
     # 显示页眉
+    title "Search"
+
+    funcs=(
+        "Name: $sname"
+        # Size 最终要转换成字节大小
+        "$(show_bool $ssize) Size"
+        "    min: $ssize_min"
+        "    max: $ssize_max"
+        # Time 最终要转换成自1970年1月1日0时0分0秒的时间戳
+        "$(show_bool $satime) Access Time"
+        "    min: $(show_time 5 $cho_colu "${sat_min[@]}")"
+        "    max: $(show_time 6 $cho_colu "${sat_max[@]}")"
+        "$(show_bool $sctime) Change Time"
+        "    min: $(show_time 8 $cho_colu "${sct_min[@]}")"
+        "    max: $(show_time 9 $cho_colu "${sct_max[@]}")"
+        "$(show_bool $smtime) Modify Time"
+        "    min: $(show_time 11 $cho_colu "${smt_min[@]}")"
+        "    max: $(show_time 12 $cho_colu "${smt_max[@]}")"
+        "$(show_bool $saccurate) Precise search (enable regular expression)"
+        "$(show_bool $srecursive) Reverse search ('-1' means infinite recursion): $yellow$slevel$normal"
+        "$(show_bool $shiden) Include hidden files"
+        "$(show_bool $sverbose) Show verbose output"
+        "Type: < ${search_type_options[$search_type_setting]} >"
+        "Confirm"
+        "Cancel"
+    )
 
     # 显示页面
-    # 测试
-    sname='*e*'
-    saccurate=true
-    sdir="$(pwd)"
-    shiden=true
-    # sctime=true
-    # sctime_min=1000000000
-    # sctime_max=1999999999
-    slevel=3
-    srecursive=true
-    echo "$(search_optind)"
-    echo ""
-    search $(search_optind)
-    echo "${search_result[*]}"
+    local i=0
+    for func in "${funcs[@]}"; do
+        if [ $ssize = false ] && { ((i == 2)) || ((i == 3)); }; then
+            ((i++))
+            continue
+        elif [ $satime = false ] && { ((i == 5)) || ((i == 6)); }; then
+            ((i++))
+            continue
+        elif [ $sctime = false ] && { ((i == 8)) || ((i == 9)); }; then
+            ((i++))
+            continue
+        elif [ $smtime = false ] && { ((i == 11)) || ((i == 12)); }; then
+            ((i++))
+            continue
+        fi
+        if ((cho == i)) && ((i != 2)) && ((i != 3)) && ((i != 5)) && ((i != 6)) && ((i != 8)) && ((i != 9)) && ((i != 11)) && ((i != 12)); then
+            echo -e "$CHO_COLOR$(pad "$func")"
+        else
+            echo -e "$NORMAL$func"
+        fi
+        ((i++))
+    done
 
     # 显示页尾
     echo -e "$NORMAL"
@@ -1437,11 +1614,12 @@ rename_menu() {
     refresh=true
 }
 
-search_menu() { 
+search_menu() {
     funcs=()
     confirm_clr
     page="search"
     cho=0
+    cho_colu=0
 
     while [ "$isexit" = false ]; do
         clear
@@ -1452,6 +1630,7 @@ search_menu() {
     isexit=false
     page="main"
     cho=0
+    cho_colu=0
     refresh=true
 }
 
@@ -1505,6 +1684,35 @@ show_prop() {
     fi
 }
 
+show_time() {
+    local line=$1
+    shift
+    local colu=$1
+    shift
+    local time_str=""
+    local i=0
+    # 确保传递了6个时间参数
+    if [ $# -ne 6 ]; then
+        echo "Error: 6 time parameters required" >&2
+        return 1
+    fi
+    for t in "$@"; do
+        # 判断当前部分是否被选中
+        if ((line == cho)) && ((colu == i)); then # 假设cho_colu应为当前字段的索引i
+            time_str+="${GREEN}${t}${NORMAL}"
+        else
+            time_str+="$t"
+        fi
+        # 根据位置添加分隔符
+        case $i in
+        2) time_str+=" " ;; # 日在第三个位置（索引2）后加空格
+        5) ;;               # 秒在第六个位置（索引5）后不加
+        *) time_str+="-" ;; # 其他情况加"-"
+        esac
+        ((i++))
+    done
+    echo -en "$time_str"
+}
 # 日志类 ####################################################################################################
 
 log_time() {
@@ -1559,14 +1767,18 @@ BLUE='\033[44m'
 blue='\033[34m'
 TAB="    "
 
-sort_options=("name" "size" "modified date") # 排序选项
-new_type_options=("file" "dirctory")         # 新建类型
+CHO_COLOR=$GREEN
 
-funcs=()             # 存储可选行
-isexit=false         # 是否退出
-refresh=true         # 是否刷新
-debug=false          # 调试模式
-cho=0                # 当前选择行
+sort_options=("name" "size" "modified date")  # 排序选项
+new_type_options=("file" "dirctory")          # 新建类型
+search_type_options=("all" "file" "dirctory") # 搜索类型
+
+funcs=()     # 存储可选行
+isexit=false # 是否退出
+refresh=true # 是否刷新
+debug=false  # 调试模式
+cho=0        # 当前选择行
+cho_colu=0
 page="main"          # 当前页面
 sort_setting=0       # 排序选项
 sort_r=false         # 是否倒序排序
@@ -1599,6 +1811,14 @@ satime_min=0
 satime_max=0
 ssize_min=0
 ssize_max=0
+search_type_setting=0
+
+sct_min=(0 0 0 0 0 0)
+sct_max=(0 0 0 0 0 0)
+smt_min=(0 0 0 0 0 0)
+smt_max=(0 0 0 0 0 0)
+sat_min=(0 0 0 0 0 0)
+sat_max=(0 0 0 0 0 0)
 
 errfile_path="/tmp/ubuntu-cd.err" # 错误日志路径
 log_path="/tmp/ubuntu-cd.log"     # 日志路径
