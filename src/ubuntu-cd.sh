@@ -495,6 +495,15 @@ cho_move() {
                         ;;
                     esac
                     ;;
+                "search_result")
+                    if ((cho == 0)); then
+                        ((sort_setting++))
+                        if ((sort_setting == ${#sort_options[@]})); then
+                            sort_setting=0
+                        fi
+                        refresh=true
+                    fi
+                    ;;
                 esac
                 ;;
             # Left
@@ -536,6 +545,15 @@ cho_move() {
                         fi
                         ;;
                     esac
+                    ;;
+                "search_result")
+                    if ((cho == 0)); then
+                        ((sort_setting--))
+                        if ((sort_setting == -1)); then
+                            sort_setting=$((${#sort_options[@]} - 1))
+                        fi
+                        refresh=true
+                    fi
                     ;;
                 esac
                 ;;
@@ -1139,6 +1157,8 @@ cho_move() {
                             search_result=()
                             search $(search_optind)
                             search_result_menu
+                            cho=0
+                            break
                         elif ((cho == 1)); then
                             ssize=$(not $ssize)
                             break
@@ -1173,6 +1193,18 @@ cho_move() {
                     esac
                 fi
                 ;;
+            "search_result")
+                if ((cho == 0)); then
+                    confirm_clr
+                    sort_r=$(not $sort_r)
+                    break
+                elif ((cho == ${#funcs[@]} - 2)); then
+                    isexit=true
+                    break
+                elif ((cho == ${#funcs[@]} - 1)); then
+                    main_menu
+                fi
+                ;;
             esac
         fi
     done
@@ -1192,7 +1224,6 @@ refresh_cooling() {
 sort_files() {
     # 排序
     local files=($@)
-    local sort_start_time=$(date +%s.%N)
     local sort_mode="${sort_options[$sort_setting]}"
     # TODO 其余排序方式
     if [ "$sort_mode" = "name" ]; then
@@ -1240,7 +1271,6 @@ sort_files() {
         )
         files=("${sorted_files[@]}")
     fi
-    log_debug "Sorting time consuming: $(echo "$(date +%s.%N) - $sort_start_time" | bc | awk '{printf "%.2f", $1}')s"
     echo "${files[@]}"
 }
 
@@ -1276,7 +1306,9 @@ __main_menu__() {
         shopt -u dotglob  # 恢复默认的glob模式
 
         # 排序
+        local sort_start_time=$(date +%s.%N)
         files=($(sort_files "${files[@]}"))
+        log_debug "Sorting time consuming: $(echo "$(date +%s.%N) - $sort_start_time" | bc | awk '{printf "%.2f", $1}')s"
 
         file_list_page_max=$(((${#files[@]} + file_list_line - 1) / file_list_line - 1))
 
@@ -1497,6 +1529,7 @@ __search_menu__() {
 }
 
 # 搜索结果菜单
+# FIXME 卡顿严重
 __search_result_menu__() {
     if ((cho == ${#funcs[@]} - 1)); then
         local refresh_cho=true
@@ -1507,15 +1540,20 @@ __search_result_menu__() {
     # 显示页眉
     title "Search Result"
 
-    # 排序
-    search_result=($(sort_files "${search_result[@]}"))
+    if [ $refresh = true ]; then
+        # 排序
+        local sort_start_time=$(date +%s.%N)
+        search_result=($(sort_files "${search_result[@]}"))
+        log_debug "Sorting time consuming: $(echo "$(date +%s.%N) - $sort_start_time" | bc | awk '{printf "%.2f", $1}')s"
+        refresh=false
+    fi
 
     file_list_page_max=$(((${#search_result[@]} + file_list_line - 1) / file_list_line - 1))
     
     local files_form
     readarray -t files_form < <(show_files_form "${search_result[@]}") # 用于存储每行应该显示的内容
 
-    funcs=("$(show_sort_by)" "${files_form[@]}" "$(centering "< Page $((file_list_page + 1)) / $((file_list_page_max + 1)) >")")
+    funcs=("$(show_sort_by)" "${files_form[@]}" "$(centering "< Page $((file_list_page + 1)) / $((file_list_page_max + 1)) >")" "Back to Search" "Back to Main Menu")
 
     [ "$refresh_cho" = true ] && cho=$((${#funcs[@]} - 1))
 
@@ -1535,6 +1573,9 @@ __search_result_menu__() {
             dividing_line "-"
             printf "%-30s %-30s %-30s %-30s %+10s" "Name" "Modified Date" "Type" "Directory" "Size"
             echo ""
+        # elif ((i == ${#funcs[@]} - 3)); then
+        #     echo -ne "$NORMAL"
+        #     dividing_line "-"
         fi
         ((i++))
     done
@@ -1647,6 +1688,7 @@ search_result_menu() {
     isexit=false
     cho=0
     refresh=true
+    page="search"
 }
 
 # 其余显示函数
@@ -1731,11 +1773,12 @@ show_time() {
 
 # 正确获取返回值的方法例如：
 # readarray -t files_form < <(show_files_form "${files[@]}")
+# 注意：上述方法是在子进程中执行，因此页码不会更新，需要在外部代码中更新
 show_files_form(){
     local files=($@)
     local files_form=()
 
-    file_list_page_max=$(((${#files[@]} + file_list_line - 1) / file_list_line - 1))
+    file_list_page_max=$(((${#files[@]} + file_list_line - 1) / file_list_line - 1)) # 只需调用该行代码即可获取页面总数
     if ((file_list_page > file_list_page_max)); then
         file_list_page=$file_list_page_max
     fi
