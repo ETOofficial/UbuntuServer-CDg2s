@@ -198,7 +198,7 @@ cleanup() {
 }
 
 # 用法：
-#
+# TODO 完善注释
 search() {
     local OPTIND # 确保选项解析正确，尤其在多次调用函数时
 
@@ -1096,13 +1096,13 @@ cho_move() {
                 if ((cho == 0)); then # 名称输入行
                     confirm_clr
                     if [ "$key" = $'\x7f' ]; then
-                        rename_name="${rename_name%?}"
+                        sname="${sname%?}"
                     elif [ "$key" = $'\x00' ]; then
                         ((cho++))
-                    elif (($(printf '%s' "$rename_name" | wc -c) >= 255)); then
+                    elif (($(printf '%s' "$sname" | wc -c) >= 255)); then
                         log_err "name too long"
                     else
-                        rename_name+="$key"
+                        sname+="$key"
                     fi
                     break
                 elif ((cho == 14)); then # 递归层数输入行
@@ -1134,7 +1134,11 @@ cho_move() {
                             isexit=true
                             break
                         elif ((cho == ${#funcs[@]} - 2)); then # 确认
-                            :
+                            clear
+                            sdir="$(pwd)"
+                            search_result=()
+                            search $(search_optind)
+                            search_result_menu
                         elif ((cho == 1)); then
                             ssize=$(not $ssize)
                             break
@@ -1185,6 +1189,61 @@ refresh_cooling() {
     fi
 }
 
+sort_files() {
+    # 排序
+    local files=($@)
+    local sort_start_time=$(date +%s.%N)
+    local sort_mode="${sort_options[$sort_setting]}"
+    # TODO 其余排序方式
+    if [ "$sort_mode" = "name" ]; then
+        if [ $sort_r = true ]; then
+            files=($(printf "%s\n" "${files[@]}" | sort -r))
+        else
+            files=($(printf "%s\n" "${files[@]}" | sort))
+        fi
+    elif [ "$sort_mode" = "size" ]; then
+        local sorted_files=()
+        while IFS= read -r line; do # 确保安全读取文件名
+            sorted_files+=("$line")
+        done < <(
+            # 遍历文件，输出格式：大小 文件名
+            for file in "${files[@]}"; do
+                if [[ -e "$file" ]]; then
+                    size=$(stat -c "%s" "$file" | awk '{print $1}') # 获取大小
+                    printf "%s %s\n" "$size" "$file"
+                fi
+            done |
+                if [ $sort_r = true ]; then
+                    sort -nr
+                else
+                    sort -n
+                fi | cut -d ' ' -f2- # 按数值排序后提取文件名
+        )
+        files=("${sorted_files[@]}")
+    elif [ "$sort_mode" = "modified date" ]; then
+        local sorted_files=()
+        while IFS= read -r line; do # 确保安全读取文件名
+            sorted_files+=("$line")
+        done < <(
+            # 遍历文件，输出格式：大小 文件名
+            for file in "${files[@]}"; do
+                if [[ -e "$file" ]]; then
+                    mtime=$(stat -c "%Y" "$file") # 获取修改时间戳
+                    printf "%s %s\n" "$mtime" "$file"
+                fi
+            done |
+                if [ $sort_r = true ]; then
+                    sort -nr
+                else
+                    sort -n
+                fi | cut -d ' ' -f2- # 按数值排序后提取文件名
+        )
+        files=("${sorted_files[@]}")
+    fi
+    log_debug "Sorting time consuming: $(echo "$(date +%s.%N) - $sort_start_time" | bc | awk '{printf "%.2f", $1}')s"
+    echo "${files[@]}"
+}
+
 # 菜单类 ####################################################################################################
 
 # 主菜单
@@ -1217,130 +1276,22 @@ __main_menu__() {
         shopt -u dotglob  # 恢复默认的glob模式
 
         # 排序
-        local sort_start_time=$(date +%s.%N)
-        local sort_mode="${sort_options[$sort_setting]}"
-        # TODO 其余排序方式
-        if [ "$sort_mode" = "name" ]; then
-            if [ $sort_r = true ]; then
-                files=($(printf "%s\n" "${files[@]}" | sort -r))
-            else
-                files=($(printf "%s\n" "${files[@]}" | sort))
-            fi
-        elif [ "$sort_mode" = "size" ]; then
-            local sorted_files=()
-            while IFS= read -r line; do # 确保安全读取文件名
-                sorted_files+=("$line")
-            done < <(
-                # 遍历文件，输出格式：大小 文件名
-                for file in "${files[@]}"; do
-                    if [[ -e "$file" ]]; then
-                        size=$(stat -c "%s" "$file" | awk '{print $1}') # 获取大小
-                        printf "%s %s\n" "$size" "$file"
-                    fi
-                done |
-                    if [ $sort_r = true ]; then
-                        sort -nr
-                    else
-                        sort -n
-                    fi | cut -d ' ' -f2- # 按数值排序后提取文件名
-            )
-            files=("${sorted_files[@]}")
-        elif [ "$sort_mode" = "modified date" ]; then
-            local sorted_files=()
-            while IFS= read -r line; do # 确保安全读取文件名
-                sorted_files+=("$line")
-            done < <(
-                # 遍历文件，输出格式：大小 文件名
-                for file in "${files[@]}"; do
-                    if [[ -e "$file" ]]; then
-                        mtime=$(stat -c "%Y" "$file") # 获取修改时间戳
-                        printf "%s %s\n" "$mtime" "$file"
-                    fi
-                done |
-                    if [ $sort_r = true ]; then
-                        sort -nr
-                    else
-                        sort -n
-                    fi | cut -d ' ' -f2- # 按数值排序后提取文件名
-            )
-            files=("${sorted_files[@]}")
-        fi
-        log_debug "Sorting time consuming: $(echo "$(date +%s.%N) - $sort_start_time" | bc | awk '{printf "%.2f", $1}')s"
-
-        files_form=() # 用于存储每行应该显示的内容
+        files=($(sort_files "${files[@]}"))
 
         file_list_page_max=$(((${#files[@]} + file_list_line - 1) / file_list_line - 1))
-        if ((file_list_page > file_list_page_max)); then
-            file_list_page=$file_list_page_max
-        fi
-        local i=0
-        local j=0
-        for file in "${files[@]}"; do
-            if ((i < file_list_page * file_list_line)); then # 跳过前几页
-                ((i++))
-                continue
-            elif ((i >= (file_list_page + 1) * file_list_line)); then # 超过当前页时终止
-                break
-            fi
 
-            # 处理当前页文件（文件索引在 [page*max, (page+1)*max) 区间）
-            local file_type=$(show_prop type "$file")
-            if [ "$file_type" = "directory" ]; then
-                local file_name=$blue$file"/"$normal
-                local file_size=$blue"/"$normal
-                file_type=$blue$file_type$normal
-            elif [ "$file_type" = "symbolic link" ]; then
-                local link_target=$(readlink $file)
-                if [ -d "$link_target" ]; then
-                    local file_name=$blue$file"@/"$normal
-                    local file_size=$blue"@/"$normal
-                else
-                    local file_name=$blue$file"@"$normal
-                    local file_size=$blue"@"$normal
-                fi
-            else
-                local file_name=$file
-                local file_size=$(show_prop size "$file")
-            fi
-            local mtime="$(show_prop mt "$file")"
+        local files_form
+        readarray -t files_form < <(show_files_form "${files[@]}") # 用于存储每行应该显示的内容
 
-            # 对每个字段裁剪并格式化
-            file_name=$(trim_with_color "$file_name" 29) # 29字符（留1位给填充）
-            mtime=$(trim_with_color "$mtime" 29)
-            file_type=$(trim_with_color "$file_type" 29)
-            file_size=$(trim_with_color "$file_size" 14) # %+15.29s → 14字符（留1位给符号）
-
-            # 对每个变量计算动态宽度
-            local file_name_width=$(get_format_width "$file_name" 30)
-            local smtime_width=$(get_format_width "$mtime" 30)
-            local file_type_width=$(get_format_width "$file_type" 30)
-            local file_size_width=$(get_format_width "$file_size" 10)
-
-            # files_form[j]=$(printf "%-30.29s %-30.29s %-30.29s %+15.29s" "$file_name" "$mtime" "$file_type" "$file_size")
-
-            # 使用动态宽度格式化输出
-            files_form[j]=$(printf "%-*s %-*s %-*s %+*s" \
-                "$file_name_width" "$file_name" \
-                "$smtime_width" "$mtime" \
-                "$file_type_width" "$file_type" \
-                "$file_size_width" "$file_size")
-
-            ((j++))
-            ((i++))
-        done
         # 可以被选中的内容
         funcs=("Fast Search: $fast_search_name" "$(show_sort_by)" ".." "${files_form[@]}" "$(centering "< Page $((file_list_page + 1)) / $((file_list_page_max + 1)) >")")
 
         refresh=false
     fi
 
-    if [ "$refresh_cho" = true ]; then
-        cho=$((${#funcs[@]} - 1))
-    fi
+    [ "$refresh_cho" = true ] && cho=$((${#funcs[@]} - 1))
 
-    if ((cho > ${#funcs[@]} - 1)); then
-        cho=$((${#funcs[@]} - 1))
-    fi
+    ((cho > ${#funcs[@]} - 1)) && cho=$((${#funcs[@]} - 1))
 
     # 显示页面
     local i=0
@@ -1545,6 +1496,54 @@ __search_menu__() {
     echo -e "$log_info"
 }
 
+# 搜索结果菜单
+__search_result_menu__() {
+    if ((cho == ${#funcs[@]} - 1)); then
+        local refresh_cho=true
+    else
+        local refresh_cho=false
+    fi
+
+    # 显示页眉
+    title "Search Result"
+
+    # 排序
+    search_result=($(sort_files "${search_result[@]}"))
+
+    file_list_page_max=$(((${#search_result[@]} + file_list_line - 1) / file_list_line - 1))
+    
+    local files_form
+    readarray -t files_form < <(show_files_form "${search_result[@]}") # 用于存储每行应该显示的内容
+
+    funcs=("$(show_sort_by)" "${files_form[@]}" "$(centering "< Page $((file_list_page + 1)) / $((file_list_page_max + 1)) >")")
+
+    [ "$refresh_cho" = true ] && cho=$((${#funcs[@]} - 1))
+
+    ((cho > ${#funcs[@]} - 1)) && cho=$((${#funcs[@]} - 1))
+
+    # 显示页面
+    local i=0
+    for func in "${funcs[@]}"; do
+        if ((cho == i)); then
+            echo -e "$CHO_COLOR$(pad "$func")"
+        else
+            echo -e "$NORMAL$func"
+        fi
+        # 显示表头
+        if ((i == 0)); then
+            echo -ne "$NORMAL"
+            dividing_line "-"
+            printf "%-30s %-30s %-30s %-30s %+10s" "Name" "Modified Date" "Type" "Directory" "Size"
+            echo ""
+        fi
+        ((i++))
+    done
+
+    # 显示页尾
+    echo -e "$NORMAL"
+    echo -e "$log_info"
+}
+
 # 之后的 menu 函数用于直接调用
 main_menu() {
     # log_clr
@@ -1634,6 +1633,22 @@ search_menu() {
     refresh=true
 }
 
+search_result_menu() { 
+    confirm_clr
+    page="search_result"
+    cho=0
+
+    while [ "$isexit" = false ]; do
+        clear
+        __search_result_menu__
+        cho_move
+    done
+
+    isexit=false
+    cho=0
+    refresh=true
+}
+
 # 其余显示函数
 show_sort_by() {
     echo -n "Sort by(reverse:$sort_r):$TAB"
@@ -1713,6 +1728,94 @@ show_time() {
     done
     echo -en "$time_str"
 }
+
+# 正确获取返回值的方法例如：
+# readarray -t files_form < <(show_files_form "${files[@]}")
+show_files_form(){
+    local files=($@)
+    local files_form=()
+
+    file_list_page_max=$(((${#files[@]} + file_list_line - 1) / file_list_line - 1))
+    if ((file_list_page > file_list_page_max)); then
+        file_list_page=$file_list_page_max
+    fi
+    local i=0
+    local j=0
+    for file in "${files[@]}"; do
+        if ((i < file_list_page * file_list_line)); then # 跳过前几页
+            ((i++))
+            continue
+        elif ((i >= (file_list_page + 1) * file_list_line)); then # 超过当前页时终止
+            break
+        fi
+
+        # 处理当前页文件（文件索引在 [page*max, (page+1)*max) 区间）
+        local file_type=$(show_prop type "$file")
+        if [ "$file_type" = "directory" ]; then
+            local file_name=$blue$file"/"$normal
+            local file_size=$blue"/"$normal
+            file_type=$blue$file_type$normal
+        elif [ "$file_type" = "symbolic link" ]; then
+            local link_target=$(readlink $file)
+            if [ -d "$link_target" ]; then
+                local file_name=$blue$file"@/"$normal
+                local file_size=$blue"@/"$normal
+            else
+                local file_name=$blue$file"@"$normal
+                local file_size=$blue"@"$normal
+            fi
+        else
+            local file_name=$file
+            local file_size=$(show_prop size "$file")
+        fi
+        local mtime="$(show_prop mt "$file")"
+
+        # 对每个字段裁剪并格式化
+        file_name=$(trim_with_color "$file_name" 29) # 29字符（留1位给填充）
+        mtime=$(trim_with_color "$mtime" 29)
+        file_type=$(trim_with_color "$file_type" 29)
+        file_size=$(trim_with_color "$file_size" 14) # %+15.29s → 14字符（留1位给符号）
+
+
+        case $page in
+        "main")
+            # 对每个变量计算动态宽度
+            local file_name_width=$(get_format_width "$file_name" 30)
+            local smtime_width=$(get_format_width "$mtime" 30)
+            local file_type_width=$(get_format_width "$file_type" 30)
+            local file_size_width=$(get_format_width "$file_size" 10)
+            # 使用动态宽度格式化输出
+            files_form[j]=$(printf "%-*s %-*s %-*s %+*s" \
+                "$file_name_width" "$file_name" \
+                "$smtime_width" "$mtime" \
+                "$file_type_width" "$file_type" \
+                "$file_size_width" "$file_size"
+            )
+            ;;
+        "search_result")
+            file_name=$(basename "$file_name")
+            local dir_name=$(dirname "$file")
+            local file_name_width=$(get_format_width "$file_name" 30)
+            local smtime_width=$(get_format_width "$mtime" 30)
+            local file_type_width=$(get_format_width "$file_type" 30)
+            local file_size_width=$(get_format_width "$file_size" 10)
+            files_form[j]=$(printf "%-*s %-*s %-*s %-*s %+*s" \
+                "$file_name_width" "$file_name" \
+                "$smtime_width" "$mtime" \
+                "$file_type_width" "$file_type" \
+                "30" "$dir_name" \
+                "$file_size_width" "$file_size"
+            )
+            ;;
+        esac
+
+        ((j++))
+        ((i++))
+    done
+
+    printf "%s\n" "${files_form[@]}"
+}
+
 # 日志类 ####################################################################################################
 
 log_time() {
