@@ -538,9 +538,9 @@ cho_move() {
                 "search")
                     case "$cho" in
                     5 | 6 | 8 | 9 | 11 | 12)
-                        ((cho_colu++))
-                        if ((cho_colu == 6)); then
-                            cho_colu=0
+                        ((cho_colu--))
+                        if ((cho_colu == -1)); then
+                            cho_colu=5
                         fi
                         ;;
                     17)
