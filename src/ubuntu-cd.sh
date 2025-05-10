@@ -322,7 +322,11 @@ search() {
         fi
 
         if [ "$eligible" = true ]; then
-            search_result+=("$file")
+            if [ $page = "main" ]; then
+                search_result+=("$(basename "$file")")
+            else
+                search_result+=("$file")
+            fi
         fi
 
         # 处理递归
@@ -1292,7 +1296,6 @@ __main_menu__() {
     # 处理文件列表
     # 仅需要刷新时处理，减少卡顿
     # FIXME 快速搜索内容变化时仍然会卡顿，将搜索栏优先刷新
-    # TODO 快速搜索功能实现
     if [ $refresh = true ]; then
         refresh_time=$(date +%s.%N)
         echo -e "${RED}${black}loading...$NORMAL$normal"
@@ -1304,6 +1307,11 @@ __main_menu__() {
         files=(*)         # 将当前目录下的所有文件和目录存入数组
         shopt -u nullglob # 取消nullglob选项，避免影响后续命令
         shopt -u dotglob  # 恢复默认的glob模式
+
+        # 快速搜索
+        search_result=()
+        search -d "$(pwd)" -N "$fast_search_name"
+        files=(${search_result[@]})
 
         # 排序
         local sort_start_time=$(date +%s.%N)
@@ -1588,6 +1596,7 @@ __search_result_menu__() {
 # 之后的 menu 函数用于直接调用
 main_menu() {
     # log_clr
+    cho=2
     while [ "$isexit" = false ]; do
         clear
         __main_menu__
