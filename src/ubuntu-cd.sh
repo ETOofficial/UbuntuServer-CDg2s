@@ -199,6 +199,7 @@ cleanup() {
 
 # 用法：
 # TODO 完善注释
+# TODO verbose 功能实现
 search() {
     local OPTIND # 确保选项解析正确，尤其在多次调用函数时
 
@@ -1482,6 +1483,7 @@ __search_menu__() {
     # 显示页眉
     title "Search"
 
+    # TODO size, time 选项具体实现
     funcs=(
         "Name: $sname"
         # Size 最终要转换成字节大小
