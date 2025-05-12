@@ -819,7 +819,27 @@ cho_move() {
                         log_warn "unrecommend charactor \"$unrecommend_char\"\nThis character is not recommended because they have special meanings in the shell and may cause command execution errors."
                     fi
                     break
-
+                elif ((new_type_setting == 2)) && ((cho == 2)); then # 链接目标输入行
+                    confirm_clr
+                    if [ "$key" = $'\x7f' ]; then
+                        new_slink_target="${new_slink_target%?}"
+                        # log_clr
+                    elif [ "$key" = "\\" ]; then
+                        log_err "unsupported charactor \"\\\""
+                    elif [ "$key" = $'\x00' ]; then
+                        ((cho++))
+                    elif (($(printf '%s' "$new_slink_target" | wc -c) >= 255)); then
+                        log_err "name too long"
+                    else
+                        new_slink_target+="$key"
+                        # log_clr
+                    fi
+                    local unrecommend_chars=("<" ">" "?" "*" "|" "\"" "'" " ")
+                    local unrecommend_char="$(contains_element "$new_slink_target" "${unrecommend_chars[@]}")"
+                    if [ "$unrecommend_char" != "" ]; then
+                        log_warn "unrecommend charactor \"$unrecommend_char\"\nThis character is not recommended because they have special meanings in the shell and may cause command execution errors."
+                    fi
+                    break
                 else
                     case "$key" in
                     $'\x00')
@@ -829,10 +849,13 @@ cho_move() {
                             isexit=true
                             break
                         elif ((cho == ${#funcs[@]} - 2)); then # 确认
+                            local new_type="${new_type_options[$new_type_setting]}"
                             if [ "$new_name" = "" ]; then
                                 log_err "name cannot be empty"
-                            elif [ "${new_type_options[$new_type_setting]}" = "file" ]; then
-                                if touch "$new_name" 2>""$errfile_path""; then
+                            elif ((new_type_setting == 2)) && [ "$new_slink_target" = "" ]; then
+                                log_err "target cannot be empty"
+                            elif [ "$new_type" = "File" ]; then
+                                if touch "$new_name" 2>$errfile_path; then
                                     log "$yellow$new_name$normal created"
                                     isexit=true
                                 else
@@ -840,13 +863,22 @@ cho_move() {
                                     log_err "$(handle_error "$new_name" "$errmsg")"
                                     isexit=false
                                 fi
-                            elif [ "${new_type_options[$new_type_setting]}" = "dirctory" ]; then
-                                if mkdir "$new_name" 2>""$errfile_path""; then
+                            elif [ "$new_type" = "Dirctory" ]; then
+                                if mkdir "$new_name" 2>$errfile_path; then
                                     log "$yellow$new_name$normal created"
                                     isexit=true
                                 else
                                     local errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$new_name" "$errmsg")"
+                                    isexit=false
+                                fi
+                            elif [ "$new_type" = "Symbolic Link" ]; then
+                                if ln -s "$new_slink_target" "$new_name" 2>$errfile_path; then
+                                    log "$yellow$new_name$normal created"
+                                    isexit=true
+                                else
+                                    local errmsg=$(cat "$errfile_path")
+                                    log_err "$(handle_error "$new_name -> $new_slink_target" "$errmsg")"
                                     isexit=false
                                 fi
                             fi
@@ -922,7 +954,7 @@ cho_move() {
                                 clear
                                 echo "> mv ${args[*]} $paste_target_file $paste_target_dir"
                                 echo "Output:"
-                                mv "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee ""$errfile_path""
+                                mv "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee $errfile_path
                                 if [ ${PIPESTATUS[0]} -ne 0 ]; then
                                     errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$paste_target_file" "$errmsg")"
@@ -1040,7 +1072,7 @@ cho_move() {
                                 clear
                                 echo "> cp ${args[*]} $paste_target_file $paste_target_dir"
                                 echo "Output:"
-                                cp "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee ""$errfile_path""
+                                cp "${args[@]}" "$paste_target_file" "$paste_target_dir" 2>&1 | tee $errfile_path
                                 if [ ${PIPESTATUS[0]} -ne 0 ]; then
                                     errmsg=$(cat "$errfile_path")
                                     log_err "$(handle_error "$paste_target_file" "$errmsg")"
@@ -1092,7 +1124,7 @@ cho_move() {
                                 log_err "name cannot be empty"
                             else
                                 # 覆盖不会报错，目前只能让用户交互
-                                if mv -i "$rename_target_file" "$rename_name" 2>""$errfile_path""; then
+                                if mv -i "$rename_target_file" "$rename_name" 2>$errfile_path; then
                                     log "$yellow$rename_target_file$normal renamed to $yellow$rename_name$normal"
                                     isexit=true
                                 else
@@ -1367,7 +1399,11 @@ __new_menu__() {
     echo -e "Current directory: $yellow$(pwd)$normal"
 
     # 显示页面
-    funcs=("$(show_new_type)" "Name: $new_name" "Confirm" "Cancel")
+    if ((new_type_setting == 2)); then
+        funcs=("Type: < ${new_type_options[$new_type_setting]} >" "Name: $new_name" "Target: $new_slink_target" "Confirm" "Cancel")
+    else
+        funcs=("Type: < ${new_type_options[$new_type_setting]} >" "Name: $new_name" "Confirm" "Cancel")
+    fi
 
     local i=0
     for func in "${funcs[@]}"; do
@@ -1929,7 +1965,7 @@ TAB="    "
 CHO_COLOR=$GREEN
 
 sort_options=("name" "size" "modified date")  # 排序选项
-new_type_options=("file" "dirctory")          # 新建类型
+new_type_options=("File" "Dirctory" "Symbolic Link")          # 新建类型
 search_type_options=("all" "file" "dirctory") # 搜索类型
 
 funcs=()     # 存储可选行
