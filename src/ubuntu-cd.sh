@@ -1309,10 +1309,12 @@ __main_menu__() {
         shopt -u nullglob # 取消nullglob选项，避免影响后续命令
         shopt -u dotglob  # 恢复默认的glob模式
 
-        # 快速搜索
-        search_result=()
-        search -d "$(pwd)" -N "$fast_search_name"
-        files=(${search_result[@]})
+        if [ "$fast_search_name" != "" ]; then
+            # 快速搜索
+            search_result=()
+            search -d "$(pwd)" -N "$fast_search_name"
+            files=(${search_result[@]})
+        fi
 
         # 排序
         local sort_start_time=$(date +%s.%N)
